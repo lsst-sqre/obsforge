@@ -19,10 +19,12 @@ classifiers = [
 ]
 requires-python = ">=3.14"
 dependencies = [
+    "alembic[tz]>=1.16",
     "fastapi>=0.100",
     "pydantic>2",
     "pydantic-settings>=2",
-    "safir>=5",
+    "safir[db]>=15",
+    "sqlalchemy[asyncio]>=2",
     "uvicorn[standard]>=0.34",
 ]
 dynamic = ["version"]
@@ -53,6 +55,7 @@ lint = [
 ]
 tox = [
     "tox>=4.24",
+    "tox-docker>=5",
     "tox-uv>=1.25",
 ]
 typing = [
