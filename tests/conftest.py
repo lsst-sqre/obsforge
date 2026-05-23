@@ -1,7 +1,9 @@
 """Test fixtures for obsforge tests."""
 
 from collections.abc import AsyncGenerator
+from typing import Any
 
+import pytest
 import pytest_asyncio
 from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
@@ -11,12 +13,30 @@ from obsforge import main
 
 
 @pytest_asyncio.fixture
-async def app() -> AsyncGenerator[FastAPI]:
+async def app(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[FastAPI]:
     """Return a configured test application.
 
     Wraps the application in a lifespan manager so that startup and shutdown
     events are sent during test execution.
     """
+
+    class FakeEngine:
+        async def dispose(self) -> None:
+            pass
+
+    def fake_create_database_engine(url: Any, password: Any) -> FakeEngine:
+        return FakeEngine()
+
+    async def fake_is_database_current(
+        engine: FakeEngine, logger: Any = None, config_path: Any = None
+    ) -> bool:
+        return True
+
+    monkeypatch.setattr(
+        main, "create_database_engine", fake_create_database_engine
+    )
+    monkeypatch.setattr(main, "is_database_current", fake_is_database_current)
+
     async with LifespanManager(main.app):
         yield main.app
 
