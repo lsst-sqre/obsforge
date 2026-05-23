@@ -83,3 +83,35 @@ async def test_register_visit(
         "created_at": "2026-03-27T08:15:10Z",
         "updated_at": "2026-03-27T08:15:10Z",
     }
+
+
+@pytest.mark.asyncio
+async def test_register_visit_persists_job(client: AsyncClient) -> None:
+    """Test ``POST /obsforge/register`` against the database."""
+    payload = {
+        "instrument": "LSSTCam",
+        "day_obs": 20260327,
+        "visit_id": "LSSTCam-20260327-123456",
+        "timespan": {
+            "begin": "2026-03-27T08:15:10Z",
+            "end": "2026-03-27T08:15:45Z",
+        },
+    }
+
+    first_response = await client.post("/obsforge/register", json=payload)
+    second_response = await client.post("/obsforge/register", json=payload)
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    first = first_response.json()
+    second = second_response.json()
+    assert second == first
+    assert first["id"] > 0
+    assert first["visit_id"] == "LSSTCam-20260327-123456"
+    assert first["instrument"] == "LSSTCam"
+    assert first["day_obs"] == 20260327
+    assert first["phase"] == "PENDING"
+    assert first["attempt_count"] == 0
+    assert first["registration_payload"] == payload
+    assert first["created_at"].endswith("Z")
+    assert first["updated_at"].endswith("Z")

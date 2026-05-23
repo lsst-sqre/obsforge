@@ -146,6 +146,50 @@ async def test_mark_executing_records_attempt() -> None:
 
 
 @pytest.mark.asyncio
+async def test_mark_executing_returns_executing_job() -> None:
+    store = FakeEnrichmentJobStore(make_job(EnrichmentJobPhase.EXECUTING))
+    service = EnrichmentJobService(store)
+
+    job = await service.mark_executing(1)
+
+    assert job.phase == EnrichmentJobPhase.EXECUTING
+    assert store.calls == ["get"]
+
+
+@pytest.mark.asyncio
+async def test_mark_executing_rejects_completed_job() -> None:
+    store = FakeEnrichmentJobStore(make_job(EnrichmentJobPhase.COMPLETED))
+    service = EnrichmentJobService(store)
+
+    with pytest.raises(InvalidEnrichmentJobTransitionError):
+        await service.mark_executing(1)
+
+    assert store.calls == ["get"]
+
+
+@pytest.mark.asyncio
+async def test_mark_completed_transitions_executing_job() -> None:
+    store = FakeEnrichmentJobStore(make_job(EnrichmentJobPhase.EXECUTING))
+    service = EnrichmentJobService(store)
+
+    job = await service.mark_completed(1)
+
+    assert job.phase == EnrichmentJobPhase.COMPLETED
+    assert store.calls == ["get", "mark_completed"]
+
+
+@pytest.mark.asyncio
+async def test_mark_completed_returns_completed_job() -> None:
+    store = FakeEnrichmentJobStore(make_job(EnrichmentJobPhase.COMPLETED))
+    service = EnrichmentJobService(store)
+
+    job = await service.mark_completed(1)
+
+    assert job.phase == EnrichmentJobPhase.COMPLETED
+    assert store.calls == ["get"]
+
+
+@pytest.mark.asyncio
 async def test_mark_completed_rejects_pending_job() -> None:
     store = FakeEnrichmentJobStore(make_job(EnrichmentJobPhase.PENDING))
     service = EnrichmentJobService(store)
@@ -169,3 +213,29 @@ async def test_mark_failed_records_error_summary() -> None:
     assert job.error_code == "ButlerError"
     assert job.error_message == "metadata missing"
     assert store.calls == ["get", "mark_failed"]
+
+
+@pytest.mark.asyncio
+async def test_mark_failed_returns_failed_job() -> None:
+    store = FakeEnrichmentJobStore(make_job(EnrichmentJobPhase.ERROR))
+    service = EnrichmentJobService(store)
+
+    job = await service.mark_failed(
+        1, error_code="ButlerError", error_message="metadata missing"
+    )
+
+    assert job.phase == EnrichmentJobPhase.ERROR
+    assert store.calls == ["get"]
+
+
+@pytest.mark.asyncio
+async def test_mark_failed_rejects_completed_job() -> None:
+    store = FakeEnrichmentJobStore(make_job(EnrichmentJobPhase.COMPLETED))
+    service = EnrichmentJobService(store)
+
+    with pytest.raises(InvalidEnrichmentJobTransitionError):
+        await service.mark_failed(
+            1, error_code="ButlerError", error_message="metadata missing"
+        )
+
+    assert store.calls == ["get"]

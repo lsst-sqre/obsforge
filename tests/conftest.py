@@ -12,6 +12,8 @@ from safir.database import (
     initialize_database,
     stamp_database_async,
 )
+from safir.dependencies.db_session import db_session_dependency
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from obsforge import main
 from obsforge.config import config
@@ -46,3 +48,14 @@ async def client(app: FastAPI) -> AsyncGenerator[AsyncClient]:
         base_url="https://example.com/", transport=ASGITransport(app=app)
     ) as client:
         yield client
+
+
+@pytest_asyncio.fixture
+async def db_session(app: FastAPI) -> AsyncGenerator[AsyncSession]:
+    """Return an initialized database session."""
+    session_generator = db_session_dependency()
+    session = await anext(session_generator)
+    try:
+        yield session
+    finally:
+        await session_generator.aclose()
