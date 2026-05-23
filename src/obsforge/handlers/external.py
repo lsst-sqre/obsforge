@@ -3,13 +3,17 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from safir.dependencies.db_session import db_session_dependency
 from safir.dependencies.logger import logger_dependency
 from safir.metadata import get_metadata
 from safir.slack.webhook import SlackRouteErrorHandler
+from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.stdlib import BoundLogger
 
 from ..config import config
-from ..models import Index
+from ..models import Index, SerializedEnrichmentJob, VisitRegistration
+from ..services import EnrichmentJobService
+from ..storage import EnrichmentJobStore
 
 __all__ = ["external_router"]
 
@@ -48,3 +52,19 @@ async def get_index(
         application_name=config.name,
     )
     return Index(metadata=metadata)
+
+
+@external_router.post(
+    "/register",
+    response_model=SerializedEnrichmentJob,
+    response_model_exclude_none=True,
+    summary="Register a visit for enrichment",
+)
+async def register_visit(
+    *,
+    registration: VisitRegistration,
+    session: Annotated[AsyncSession, Depends(db_session_dependency)],
+) -> SerializedEnrichmentJob:
+    store = EnrichmentJobStore(session)
+    service = EnrichmentJobService(store)
+    return await service.register_visit(registration)
