@@ -1,41 +1,39 @@
 """Test fixtures for obsforge tests."""
 
 from collections.abc import AsyncGenerator
-from typing import Any
 
-import pytest
 import pytest_asyncio
+import structlog
 from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from safir.database import (
+    create_database_engine,
+    initialize_database,
+    stamp_database_async,
+)
 
 from obsforge import main
+from obsforge.config import config
+from obsforge.schema import SchemaBase
 
 
 @pytest_asyncio.fixture
-async def app(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[FastAPI]:
+async def app() -> AsyncGenerator[FastAPI]:
     """Return a configured test application.
 
     Wraps the application in a lifespan manager so that startup and shutdown
     events are sent during test execution.
     """
-
-    class FakeEngine:
-        async def dispose(self) -> None:
-            pass
-
-    def fake_create_database_engine(url: Any, password: Any) -> FakeEngine:
-        return FakeEngine()
-
-    async def fake_is_database_current(
-        engine: FakeEngine, logger: Any = None, config_path: Any = None
-    ) -> bool:
-        return True
-
-    monkeypatch.setattr(
-        main, "create_database_engine", fake_create_database_engine
+    logger = structlog.get_logger(__name__)
+    engine = create_database_engine(
+        config.database_url, config.database_password
     )
-    monkeypatch.setattr(main, "is_database_current", fake_is_database_current)
+    await initialize_database(
+        engine, logger, schema=SchemaBase.metadata, reset=True
+    )
+    await stamp_database_async(engine)
+    await engine.dispose()
 
     async with LifespanManager(main.app):
         yield main.app

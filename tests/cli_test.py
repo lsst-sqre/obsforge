@@ -69,8 +69,9 @@ def test_init(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert engine.disposed is True
-    assert calls == [
-        ("create_database_engine", "postgresql://obsforge@localhost/obsforge"),
+    assert calls[0][0] == "create_database_engine"
+    assert calls[0][1].startswith("postgresql://obsforge@")
+    assert calls[1:] == [
         ("initialize_database", True),
         ("stamp_database", alembic_config_path),
     ]
@@ -135,10 +136,9 @@ def test_validate_schema_current(
 
     assert result.exit_code == 0
     assert engine.disposed is True
-    assert calls == [
-        ("create_database_engine", "postgresql://obsforge@localhost/obsforge"),
-        ("is_database_current", alembic_config_path),
-    ]
+    assert calls[0][0] == "create_database_engine"
+    assert calls[0][1].startswith("postgresql://obsforge@")
+    assert calls[1:] == [("is_database_current", alembic_config_path)]
 
 
 def test_validate_schema_out_of_date(
