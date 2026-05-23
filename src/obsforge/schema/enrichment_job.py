@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import CheckConstraint, Index, UniqueConstraint
+from sqlalchemy import Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,7 +33,6 @@ class EnrichmentJob(SchemaBase):
     instrument: Mapped[str]
     day_obs: Mapped[int]
     phase: Mapped[EnrichmentJobPhase]
-    attempt_count: Mapped[int] = mapped_column(default=0)
     error_code: Mapped[str | None]
     error_message: Mapped[str | None]
     registration_payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
@@ -44,9 +43,6 @@ class EnrichmentJob(SchemaBase):
 
     __table_args__ = (
         UniqueConstraint("visit_id", name="enrichment_job_visit_id_key"),
-        CheckConstraint(
-            "attempt_count >= 0", name="enrichment_job_attempt_count_check"
-        ),
         Index("enrichment_job_by_instrument_day_obs", "instrument", "day_obs"),
         Index("enrichment_job_by_phase_updated_at", "phase", "updated_at"),
     )

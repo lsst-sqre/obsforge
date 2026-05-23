@@ -36,7 +36,6 @@ def make_job(
         instrument="LSSTCam",
         day_obs=20260327,
         phase=phase,
-        attempt_count=0,
         error_code=None,
         error_message=None,
         registration_payload=make_registration().model_dump(mode="json"),
@@ -72,10 +71,7 @@ class FakeEnrichmentJobStore:
     async def mark_executing(self, job_id: int) -> SerializedEnrichmentJob:
         self.calls.append("mark_executing")
         self.job = self.job.model_copy(
-            update={
-                "phase": EnrichmentJobPhase.EXECUTING,
-                "attempt_count": self.job.attempt_count + 1,
-            }
+            update={"phase": EnrichmentJobPhase.EXECUTING}
         )
         return self.job
 
@@ -134,14 +130,13 @@ async def test_mark_queued_does_not_regress_executing_job() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mark_executing_records_attempt() -> None:
+async def test_mark_executing_transitions_queued_job() -> None:
     store = FakeEnrichmentJobStore(make_job(EnrichmentJobPhase.QUEUED))
     service = EnrichmentJobService(store)
 
     job = await service.mark_executing(1)
 
     assert job.phase == EnrichmentJobPhase.EXECUTING
-    assert job.attempt_count == 1
     assert store.calls == ["get", "mark_executing"]
 
 

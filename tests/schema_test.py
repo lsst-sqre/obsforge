@@ -18,7 +18,6 @@ def test_enrichment_job_columns() -> None:
         "instrument",
         "day_obs",
         "phase",
-        "attempt_count",
         "error_code",
         "error_message",
         "registration_payload",

@@ -40,8 +40,62 @@ async def test_add_or_get_is_idempotent(db_session: AsyncSession) -> None:
     assert first.visit_id == registration.visit_id
     assert first.day_obs == 20260327
     assert first.phase == EnrichmentJobPhase.PENDING
-    assert first.attempt_count == 0
     assert first.registration_payload == registration.model_dump(mode="json")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "phase",
+    [
+        EnrichmentJobPhase.QUEUED,
+        EnrichmentJobPhase.EXECUTING,
+        EnrichmentJobPhase.COMPLETED,
+    ],
+)
+async def test_add_or_get_preserves_active_or_completed_duplicates(
+    db_session: AsyncSession, phase: EnrichmentJobPhase
+) -> None:
+    store = EnrichmentJobStore(db_session)
+    registration = make_registration()
+    created = await store.add_or_get(registration)
+
+    if phase == EnrichmentJobPhase.QUEUED:
+        expected = await store.mark_queued(created.id)
+    elif phase == EnrichmentJobPhase.EXECUTING:
+        expected = await store.mark_executing(created.id)
+    else:
+        await store.mark_executing(created.id)
+        expected = await store.mark_completed(created.id)
+
+    duplicate = await store.add_or_get(registration)
+
+    assert duplicate == expected
+
+
+@pytest.mark.asyncio
+async def test_add_or_get_requeues_error_duplicate(
+    db_session: AsyncSession,
+) -> None:
+    store = EnrichmentJobStore(db_session)
+    registration = make_registration()
+    created = await store.add_or_get(registration)
+    await store.mark_executing(created.id)
+    failed = await store.mark_failed(
+        created.id,
+        error_code="ButlerError",
+        error_message="metadata missing",
+    )
+
+    requeued = await store.add_or_get(registration)
+
+    assert requeued.id == failed.id
+    assert requeued.visit_id == failed.visit_id
+    assert requeued.phase == EnrichmentJobPhase.QUEUED
+    assert requeued.error_code is None
+    assert requeued.error_message is None
+    assert requeued.started_at is None
+    assert requeued.completed_at is None
+    assert requeued.updated_at >= failed.updated_at
 
 
 @pytest.mark.asyncio
@@ -65,7 +119,6 @@ async def test_phase_updates(db_session: AsyncSession) -> None:
 
     assert queued.phase == EnrichmentJobPhase.QUEUED
     assert executing.phase == EnrichmentJobPhase.EXECUTING
-    assert executing.attempt_count == 1
     assert executing.started_at is not None
     assert completed.phase == EnrichmentJobPhase.COMPLETED
     assert completed.started_at == executing.started_at

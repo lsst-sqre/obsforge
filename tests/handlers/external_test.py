@@ -45,7 +45,6 @@ async def test_register_visit(
                 instrument=registration.instrument,
                 day_obs=registration.day_obs,
                 phase=EnrichmentJobPhase.PENDING,
-                attempt_count=0,
                 error_code=None,
                 error_message=None,
                 registration_payload=registration.model_dump(mode="json"),
@@ -78,7 +77,6 @@ async def test_register_visit(
         "instrument": "LSSTCam",
         "day_obs": 20260327,
         "phase": "PENDING",
-        "attempt_count": 0,
         "registration_payload": payload,
         "created_at": "2026-03-27T08:15:10Z",
         "updated_at": "2026-03-27T08:15:10Z",
@@ -111,7 +109,6 @@ async def test_register_visit_persists_job(client: AsyncClient) -> None:
     assert first["instrument"] == "LSSTCam"
     assert first["day_obs"] == 20260327
     assert first["phase"] == "PENDING"
-    assert first["attempt_count"] == 0
     assert first["registration_payload"] == payload
     assert first["created_at"].endswith("Z")
     assert first["updated_at"].endswith("Z")

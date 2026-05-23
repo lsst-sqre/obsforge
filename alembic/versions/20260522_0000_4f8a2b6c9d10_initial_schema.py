@@ -39,7 +39,6 @@ def upgrade() -> None:
             ),
             nullable=False,
         ),
-        sa.Column("attempt_count", sa.Integer(), nullable=False),
         sa.Column("error_code", sa.Text(), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
         sa.Column(
@@ -51,9 +50,6 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.Column("started_at", sa.DateTime(), nullable=True),
         sa.Column("completed_at", sa.DateTime(), nullable=True),
-        sa.CheckConstraint(
-            "attempt_count >= 0", name="enrichment_job_attempt_count_check"
-        ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("visit_id", name="enrichment_job_visit_id_key"),
     )
