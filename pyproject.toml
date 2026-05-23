@@ -29,6 +29,9 @@ dependencies = [
 ]
 dynamic = ["version"]
 
+[project.scripts]
+obsforge = "obsforge.cli:main_with_sentry"
+
 [project.urls]
 Homepage = "https://obsforge.lsst.io"
 Source = "https://github.com/lsst-sqre/obsforge"
