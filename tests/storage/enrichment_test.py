@@ -41,7 +41,6 @@ async def test_add_or_get_is_idempotent(db_session: AsyncSession) -> None:
     assert first.visit == registration.visit
     assert first.day_obs == 20260108
     assert first.phase == EnrichmentJobPhase.PENDING
-    assert first.attempt_count == 0
     assert first.registration_payload == registration.model_dump(mode="json")
 
 
@@ -137,7 +136,6 @@ async def test_phase_updates(db_session: AsyncSession) -> None:
 
     assert queued.phase == EnrichmentJobPhase.QUEUED
     assert executing.phase == EnrichmentJobPhase.EXECUTING
-    assert executing.attempt_count == 1
     assert executing.started_at is not None
     assert completed.phase == EnrichmentJobPhase.COMPLETED
     assert completed.started_at == executing.started_at

@@ -40,7 +40,6 @@ class EnrichmentJobStore:
                 instrument=registration.instrument,
                 day_obs=registration.day_obs,
                 phase=EnrichmentJobPhase.PENDING,
-                attempt_count=0,
                 registration_payload=payload,
                 created_at=db_now,
                 updated_at=db_now,
@@ -91,12 +90,11 @@ class EnrichmentJobStore:
 
     @retry_async_transaction
     async def mark_executing(self, job_id: int) -> SerializedEnrichmentJob:
-        """Mark a job as executing and record a worker attempt."""
+        """Mark a job as executing."""
         async with self._session.begin():
             job = await self._get_by_id(job_id)
             now = self._now_for_db()
             job.phase = EnrichmentJobPhase.EXECUTING
-            job.attempt_count += 1
             job.error_code = None
             job.error_message = None
             job.started_at = job.started_at or now
@@ -159,7 +157,6 @@ class EnrichmentJobStore:
             instrument=job.instrument,
             day_obs=job.day_obs,
             phase=job.phase,
-            attempt_count=job.attempt_count,
             error_code=job.error_code,
             error_message=job.error_message,
             registration_payload=job.registration_payload,

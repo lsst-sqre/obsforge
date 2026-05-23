@@ -33,7 +33,6 @@ class EnrichmentJob(SchemaBase):
     instrument: Mapped[str]
     day_obs: Mapped[int]
     phase: Mapped[EnrichmentJobPhase]
-    attempt_count: Mapped[int] = mapped_column(default=0)
     error_code: Mapped[str | None]
     error_message: Mapped[str | None]
     registration_payload: Mapped[dict[str, Any]] = mapped_column(JSONB)

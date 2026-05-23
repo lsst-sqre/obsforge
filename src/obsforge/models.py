@@ -63,8 +63,6 @@ class SerializedEnrichmentJob(BaseModel):
 
     phase: EnrichmentJobPhase
 
-    attempt_count: int
-
     error_code: str | None
 
     error_message: str | None
