@@ -3,9 +3,13 @@
 from datetime import UTC, datetime
 
 import pytest
+from safir.dependencies.db_session import db_session_dependency
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from obsforge.exceptions import UnknownEnrichmentJobError
+from obsforge.exceptions import (
+    InvalidEnrichmentJobTransitionError,
+    UnknownEnrichmentJobError,
+)
 from obsforge.models import VisitRegistration, VisitTimespan
 from obsforge.schema import EnrichmentJobPhase
 from obsforge.storage import EnrichmentJobStore
@@ -123,6 +127,166 @@ async def test_phase_updates(db_session: AsyncSession) -> None:
     assert completed.phase == EnrichmentJobPhase.COMPLETED
     assert completed.started_at == executing.started_at
     assert completed.completed_at is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "phase",
+    [
+        EnrichmentJobPhase.QUEUED,
+        EnrichmentJobPhase.EXECUTING,
+        EnrichmentJobPhase.COMPLETED,
+        EnrichmentJobPhase.ERROR,
+    ],
+)
+async def test_mark_queued_returns_non_pending_job(
+    db_session: AsyncSession, phase: EnrichmentJobPhase
+) -> None:
+    store = EnrichmentJobStore(db_session)
+    created = await store.add_or_get(make_registration())
+
+    if phase == EnrichmentJobPhase.QUEUED:
+        expected = await store.mark_queued(created.id)
+    elif phase == EnrichmentJobPhase.EXECUTING:
+        expected = await store.mark_executing(created.id)
+    elif phase == EnrichmentJobPhase.COMPLETED:
+        await store.mark_executing(created.id)
+        expected = await store.mark_completed(created.id)
+    else:
+        expected = await store.mark_failed(
+            created.id,
+            error_code="ButlerError",
+            error_message="metadata missing",
+        )
+
+    seen = await store.mark_queued(created.id)
+
+    assert seen == expected
+
+
+@pytest.mark.asyncio
+async def test_mark_executing_returns_executing_job(
+    db_session: AsyncSession,
+) -> None:
+    store = EnrichmentJobStore(db_session)
+    created = await store.add_or_get(make_registration())
+    executing = await store.mark_executing(created.id)
+
+    seen = await store.mark_executing(created.id)
+
+    assert seen == executing
+
+
+@pytest.mark.asyncio
+async def test_mark_completed_returns_completed_job(
+    db_session: AsyncSession,
+) -> None:
+    store = EnrichmentJobStore(db_session)
+    created = await store.add_or_get(make_registration())
+    await store.mark_executing(created.id)
+    completed = await store.mark_completed(created.id)
+
+    seen = await store.mark_completed(created.id)
+
+    assert seen == completed
+
+
+@pytest.mark.asyncio
+async def test_mark_failed_returns_error_job(
+    db_session: AsyncSession,
+) -> None:
+    store = EnrichmentJobStore(db_session)
+    created = await store.add_or_get(make_registration())
+    failed = await store.mark_failed(
+        created.id,
+        error_code="ButlerError",
+        error_message="metadata missing",
+    )
+
+    seen = await store.mark_failed(
+        created.id,
+        error_code="OtherError",
+        error_message="new message",
+    )
+
+    assert seen == failed
+
+
+@pytest.mark.asyncio
+async def test_mark_completed_rejects_pending_job(
+    db_session: AsyncSession,
+) -> None:
+    store = EnrichmentJobStore(db_session)
+    created = await store.add_or_get(make_registration())
+
+    with pytest.raises(InvalidEnrichmentJobTransitionError):
+        await store.mark_completed(created.id)
+
+    seen = await store.get(created.id)
+    assert seen.phase == EnrichmentJobPhase.PENDING
+
+
+@pytest.mark.asyncio
+async def test_mark_executing_rejects_completed_job(
+    db_session: AsyncSession,
+) -> None:
+    store = EnrichmentJobStore(db_session)
+    created = await store.add_or_get(make_registration())
+    await store.mark_executing(created.id)
+    completed = await store.mark_completed(created.id)
+
+    with pytest.raises(InvalidEnrichmentJobTransitionError):
+        await store.mark_executing(created.id)
+
+    seen = await store.get(created.id)
+    assert seen == completed
+
+
+@pytest.mark.asyncio
+async def test_mark_failed_rejects_completed_job(
+    db_session: AsyncSession,
+) -> None:
+    store = EnrichmentJobStore(db_session)
+    created = await store.add_or_get(make_registration())
+    await store.mark_executing(created.id)
+    completed = await store.mark_completed(created.id)
+
+    with pytest.raises(InvalidEnrichmentJobTransitionError):
+        await store.mark_failed(
+            created.id,
+            error_code="ButlerError",
+            error_message="metadata missing",
+        )
+
+    seen = await store.get(created.id)
+    assert seen == completed
+
+
+@pytest.mark.asyncio
+async def test_mark_completed_does_not_overwrite_newer_error_phase(
+    db_session: AsyncSession,
+) -> None:
+    store = EnrichmentJobStore(db_session)
+    created = await store.add_or_get(make_registration())
+    executing = await store.mark_executing(created.id)
+    session_generator = db_session_dependency()
+    other_session = await anext(session_generator)
+
+    try:
+        other_store = EnrichmentJobStore(other_session)
+        failed = await other_store.mark_failed(
+            executing.id,
+            error_code="ButlerError",
+            error_message="metadata missing",
+        )
+
+        with pytest.raises(InvalidEnrichmentJobTransitionError):
+            await store.mark_completed(executing.id)
+
+        seen = await store.get(executing.id)
+        assert seen == failed
+    finally:
+        await session_generator.aclose()
 
 
 @pytest.mark.asyncio
