@@ -63,36 +63,65 @@ class FakeEnrichmentJobStore:
 
     async def mark_queued(self, job_id: int) -> SerializedEnrichmentJob:
         self.calls.append("mark_queued")
-        self.job = self.job.model_copy(
-            update={"phase": EnrichmentJobPhase.QUEUED}
-        )
+        if self.job.phase == EnrichmentJobPhase.PENDING:
+            self.job = self.job.model_copy(
+                update={"phase": EnrichmentJobPhase.QUEUED}
+            )
         return self.job
 
     async def mark_executing(self, job_id: int) -> SerializedEnrichmentJob:
         self.calls.append("mark_executing")
-        self.job = self.job.model_copy(
-            update={"phase": EnrichmentJobPhase.EXECUTING}
-        )
+        if self.job.phase in (
+            EnrichmentJobPhase.PENDING,
+            EnrichmentJobPhase.QUEUED,
+        ):
+            self.job = self.job.model_copy(
+                update={"phase": EnrichmentJobPhase.EXECUTING}
+            )
+        elif self.job.phase != EnrichmentJobPhase.EXECUTING:
+            raise InvalidEnrichmentJobTransitionError(
+                self.job.id,
+                self.job.phase,
+                EnrichmentJobPhase.EXECUTING,
+            )
         return self.job
 
     async def mark_completed(self, job_id: int) -> SerializedEnrichmentJob:
         self.calls.append("mark_completed")
-        self.job = self.job.model_copy(
-            update={"phase": EnrichmentJobPhase.COMPLETED}
-        )
+        if self.job.phase == EnrichmentJobPhase.EXECUTING:
+            self.job = self.job.model_copy(
+                update={"phase": EnrichmentJobPhase.COMPLETED}
+            )
+        elif self.job.phase != EnrichmentJobPhase.COMPLETED:
+            raise InvalidEnrichmentJobTransitionError(
+                self.job.id,
+                self.job.phase,
+                EnrichmentJobPhase.COMPLETED,
+            )
         return self.job
 
     async def mark_failed(
         self, job_id: int, *, error_code: str, error_message: str
     ) -> SerializedEnrichmentJob:
         self.calls.append("mark_failed")
-        self.job = self.job.model_copy(
-            update={
-                "phase": EnrichmentJobPhase.ERROR,
-                "error_code": error_code,
-                "error_message": error_message,
-            }
-        )
+        if self.job.phase in (
+            EnrichmentJobPhase.PENDING,
+            EnrichmentJobPhase.QUEUED,
+            EnrichmentJobPhase.EXECUTING,
+        ):
+            self.job = self.job.model_copy(
+                update={
+                    "phase": EnrichmentJobPhase.ERROR,
+                    "error_code": error_code,
+                    "error_message": error_message,
+                }
+            )
+        elif self.job.phase != EnrichmentJobPhase.ERROR:
+            raise InvalidEnrichmentJobTransitionError(
+                self.job.id,
+                self.job.phase,
+                EnrichmentJobPhase.ERROR,
+            )
         return self.job
 
 
@@ -115,7 +144,7 @@ async def test_mark_queued_transitions_pending_job() -> None:
     job = await service.mark_queued(1)
 
     assert job.phase == EnrichmentJobPhase.QUEUED
-    assert store.calls == ["get", "mark_queued"]
+    assert store.calls == ["mark_queued"]
 
 
 @pytest.mark.asyncio
@@ -126,7 +155,7 @@ async def test_mark_queued_does_not_regress_executing_job() -> None:
     job = await service.mark_queued(1)
 
     assert job.phase == EnrichmentJobPhase.EXECUTING
-    assert store.calls == ["get"]
+    assert store.calls == ["mark_queued"]
 
 
 @pytest.mark.asyncio
@@ -137,7 +166,7 @@ async def test_mark_executing_transitions_queued_job() -> None:
     job = await service.mark_executing(1)
 
     assert job.phase == EnrichmentJobPhase.EXECUTING
-    assert store.calls == ["get", "mark_executing"]
+    assert store.calls == ["mark_executing"]
 
 
 @pytest.mark.asyncio
@@ -148,7 +177,7 @@ async def test_mark_executing_returns_executing_job() -> None:
     job = await service.mark_executing(1)
 
     assert job.phase == EnrichmentJobPhase.EXECUTING
-    assert store.calls == ["get"]
+    assert store.calls == ["mark_executing"]
 
 
 @pytest.mark.asyncio
@@ -159,7 +188,7 @@ async def test_mark_executing_rejects_completed_job() -> None:
     with pytest.raises(InvalidEnrichmentJobTransitionError):
         await service.mark_executing(1)
 
-    assert store.calls == ["get"]
+    assert store.calls == ["mark_executing"]
 
 
 @pytest.mark.asyncio
@@ -170,7 +199,7 @@ async def test_mark_completed_transitions_executing_job() -> None:
     job = await service.mark_completed(1)
 
     assert job.phase == EnrichmentJobPhase.COMPLETED
-    assert store.calls == ["get", "mark_completed"]
+    assert store.calls == ["mark_completed"]
 
 
 @pytest.mark.asyncio
@@ -181,7 +210,7 @@ async def test_mark_completed_returns_completed_job() -> None:
     job = await service.mark_completed(1)
 
     assert job.phase == EnrichmentJobPhase.COMPLETED
-    assert store.calls == ["get"]
+    assert store.calls == ["mark_completed"]
 
 
 @pytest.mark.asyncio
@@ -192,7 +221,7 @@ async def test_mark_completed_rejects_pending_job() -> None:
     with pytest.raises(InvalidEnrichmentJobTransitionError):
         await service.mark_completed(1)
 
-    assert store.calls == ["get"]
+    assert store.calls == ["mark_completed"]
 
 
 @pytest.mark.asyncio
@@ -207,7 +236,7 @@ async def test_mark_failed_records_error_summary() -> None:
     assert job.phase == EnrichmentJobPhase.ERROR
     assert job.error_code == "ButlerError"
     assert job.error_message == "metadata missing"
-    assert store.calls == ["get", "mark_failed"]
+    assert store.calls == ["mark_failed"]
 
 
 @pytest.mark.asyncio
@@ -220,7 +249,7 @@ async def test_mark_failed_returns_failed_job() -> None:
     )
 
     assert job.phase == EnrichmentJobPhase.ERROR
-    assert store.calls == ["get"]
+    assert store.calls == ["mark_failed"]
 
 
 @pytest.mark.asyncio
@@ -233,4 +262,4 @@ async def test_mark_failed_rejects_completed_job() -> None:
             1, error_code="ButlerError", error_message="metadata missing"
         )
 
-    assert store.calls == ["get"]
+    assert store.calls == ["mark_failed"]
