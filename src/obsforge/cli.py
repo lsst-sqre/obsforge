@@ -87,7 +87,7 @@ def init(*, alembic_config_path: Path, reset: bool) -> None:
 def update_schema(*, alembic_config_path: Path) -> None:
     """Update the schema."""
     subprocess.run(
-        ["alembic", "upgrade", "head"],
+        ["alembic", "-c", str(alembic_config_path), "upgrade", "head"],
         check=True,
         cwd=str(alembic_config_path.parent),
     )
