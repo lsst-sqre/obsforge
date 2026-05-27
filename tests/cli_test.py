@@ -96,7 +96,13 @@ def test_update_schema(
     )
 
     assert result.exit_code == 0
-    assert calls == [(["alembic", "upgrade", "head"], True, str(tmp_path))]
+    assert calls == [
+        (
+            ["alembic", "-c", str(alembic_config_path), "upgrade", "head"],
+            True,
+            str(tmp_path),
+        )
+    ]
 
 
 def test_validate_schema_current(
