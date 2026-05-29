@@ -5,6 +5,7 @@ from obsforge.schema import EnrichmentJobPhase
 __all__ = [
     "InvalidEnrichmentJobTransitionError",
     "UnknownEnrichmentJobError",
+    "UnknownObsCoreRecordError",
 ]
 
 
@@ -14,6 +15,14 @@ class UnknownEnrichmentJobError(Exception):
     def __init__(self, job_id: int) -> None:
         super().__init__(f"Unknown enrichment job {job_id}")
         self.job_id = job_id
+
+
+class UnknownObsCoreRecordError(Exception):
+    """Raised when an ObsCore record cannot be found."""
+
+    def __init__(self, visit_id: str) -> None:
+        super().__init__(f"Unknown ObsCore record for visit {visit_id}")
+        self.visit_id = visit_id
 
 
 class InvalidEnrichmentJobTransitionError(Exception):
