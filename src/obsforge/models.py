@@ -10,7 +10,9 @@ from .schema import EnrichmentJobPhase
 
 __all__ = [
     "Index",
+    "ObsCoreUpsert",
     "SerializedEnrichmentJob",
+    "SerializedObsCore",
     "VisitRegistration",
     "VisitTimespan",
 ]
@@ -76,3 +78,109 @@ class SerializedEnrichmentJob(BaseModel):
     started_at: datetime | None
 
     completed_at: datetime | None
+
+
+class ObsCoreUpsert(BaseModel):
+    """ObsCore fields supplied by ObsForge enrichment."""
+
+    visit_id: str
+
+    dataproduct_subtype: str
+
+    obs_id: str
+
+    obs_publisher_did: str
+
+    access_url: str
+
+    s_ra: float
+
+    s_dec: float
+
+    s_region: str
+
+    s_resolution: float
+
+    t_min: float
+
+    t_max: float
+
+    t_exptime: float
+
+    em_min: float
+
+    em_max: float
+
+    band: str
+
+    physical_filter: str
+
+
+class SerializedObsCore(BaseModel):
+    """Serializable representation of one ObsCore row."""
+
+    dataproduct_type: str
+
+    dataproduct_subtype: str
+
+    calib_level: int
+
+    target_name: str | None
+
+    obs_id: str
+
+    obs_collection: str
+
+    obs_publisher_did: str
+
+    access_url: str
+
+    access_format: str
+
+    access_estsize: int | None
+
+    s_ra: float
+
+    s_dec: float
+
+    s_fov: float
+
+    s_region: str
+
+    s_resolution: float
+
+    s_xel1: int | None
+
+    s_xel2: int | None
+
+    t_xel: int | None
+
+    t_min: float
+
+    t_max: float
+
+    t_exptime: float
+
+    t_resolution: float | None
+
+    em_xel: int | None
+
+    em_min: float
+
+    em_max: float
+
+    em_res_power: float | None
+
+    o_ucd: str
+
+    pol_xel: int | None
+
+    instrument_name: str
+
+    facility_name: str
+
+    visit_id: str
+
+    band: str
+
+    physical_filter: str
