@@ -1,9 +1,13 @@
 """Configuration definition."""
 
+from typing import cast
+
+from arq.connections import RedisSettings
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from safir.arq import ArqMode, build_arq_redis_settings
 from safir.logging import LogLevel, Profile
-from safir.pydantic import EnvAsyncPostgresDsn
+from safir.pydantic import EnvAsyncPostgresDsn, EnvRedisDsn
 
 __all__ = ["Config", "config"]
 
@@ -25,6 +29,20 @@ class Config(BaseSettings):
         None, title="Password for ObsForge database"
     )
 
+    arq_mode: ArqMode = Field(
+        ArqMode.production, title="Mode for the arq queue dependency"
+    )
+
+    arq_queue_url: EnvRedisDsn = Field(
+        cast("EnvRedisDsn", "redis://localhost:6379/0"),
+        title="Redis DSN",
+        description="DSN of Redis storage for the arq queue",
+    )
+
+    arq_queue_password: SecretStr | None = Field(
+        None, title="Password for the arq Redis queue"
+    )
+
     log_level: LogLevel = Field(
         LogLevel.INFO, title="Log level of the application's logger"
     )
@@ -42,6 +60,13 @@ class Config(BaseSettings):
         title="Slack webhook for alerts",
         description="If set, alerts will be posted to this Slack webhook",
     )
+
+    @property
+    def arq_redis_settings(self) -> RedisSettings:
+        """Create Redis settings for arq."""
+        return build_arq_redis_settings(
+            self.arq_queue_url, self.arq_queue_password
+        )
 
 
 config = Config()
