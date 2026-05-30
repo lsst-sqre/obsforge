@@ -32,8 +32,9 @@ async def test_register_visit(
     """Test ``POST /obsforge/register``."""
 
     class MockEnrichmentJobService:
-        def __init__(self, store: Any) -> None:
+        def __init__(self, store: Any, queue: Any) -> None:
             self.store = store
+            self.queue = queue
 
         async def register_visit(
             self, registration: VisitRegistration
@@ -44,7 +45,7 @@ async def test_register_visit(
                 visit_id=registration.visit_id,
                 instrument=registration.instrument,
                 day_obs=registration.day_obs,
-                phase=EnrichmentJobPhase.PENDING,
+                phase=EnrichmentJobPhase.QUEUED,
                 error_code=None,
                 error_message=None,
                 registration_payload=registration.model_dump(mode="json"),
@@ -70,13 +71,14 @@ async def test_register_visit(
 
     response = await client.post("/obsforge/register", json=payload)
 
-    assert response.status_code == 200
+    assert response.status_code == 202
+    assert response.headers["Location"] == "/obsforge/jobs/42"
     assert response.json() == {
         "id": 42,
         "visit_id": "LSSTCam-20260327-123456",
         "instrument": "LSSTCam",
         "day_obs": 20260327,
-        "phase": "PENDING",
+        "phase": "QUEUED",
         "registration_payload": payload,
         "created_at": "2026-03-27T08:15:10Z",
         "updated_at": "2026-03-27T08:15:10Z",
@@ -99,16 +101,18 @@ async def test_register_visit_persists_job(client: AsyncClient) -> None:
     first_response = await client.post("/obsforge/register", json=payload)
     second_response = await client.post("/obsforge/register", json=payload)
 
-    assert first_response.status_code == 200
-    assert second_response.status_code == 200
+    assert first_response.status_code == 202
+    assert second_response.status_code == 202
     first = first_response.json()
     second = second_response.json()
     assert second == first
+    expected_location = f"/obsforge/jobs/{first['id']}"
+    assert first_response.headers["Location"] == expected_location
     assert first["id"] > 0
     assert first["visit_id"] == "LSSTCam-20260327-123456"
     assert first["instrument"] == "LSSTCam"
     assert first["day_obs"] == 20260327
-    assert first["phase"] == "PENDING"
+    assert first["phase"] == "QUEUED"
     assert first["registration_payload"] == payload
     assert first["created_at"].endswith("Z")
     assert first["updated_at"].endswith("Z")

@@ -43,6 +43,10 @@ class Config(BaseSettings):
         None, title="Password for the arq Redis queue"
     )
 
+    arq_queue_name: str = Field(
+        "arq:queue", title="Name of the arq queue used by ObsForge"
+    )
+
     log_level: LogLevel = Field(
         LogLevel.INFO, title="Log level of the application's logger"
     )
