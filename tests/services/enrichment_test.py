@@ -7,6 +7,7 @@ import pytest
 from obsforge.exceptions import InvalidEnrichmentJobTransitionError
 from obsforge.models import (
     SerializedEnrichmentJob,
+    StoredEnrichmentJob,
     VisitRegistration,
     VisitTimespan,
 )
@@ -47,14 +48,38 @@ def make_job(
 
 
 class FakeEnrichmentJobStore:
-    def __init__(self, job: SerializedEnrichmentJob | None = None) -> None:
+    def __init__(
+        self,
+        job: SerializedEnrichmentJob | None = None,
+        *,
+        arq_job_id: str | None = None,
+    ) -> None:
         self.job = job or make_job()
+        self.arq_job_id = arq_job_id
         self.calls: list[str] = []
 
     async def add_or_get(
         self, registration: VisitRegistration
     ) -> SerializedEnrichmentJob:
         self.calls.append("add_or_get")
+        return self.job
+
+    async def add_or_get_internal(
+        self, registration: VisitRegistration
+    ) -> StoredEnrichmentJob:
+        self.calls.append("add_or_get_internal")
+        return StoredEnrichmentJob.model_validate(
+            self.job.model_dump() | {"arq_job_id": self.arq_job_id}
+        )
+
+    async def set_arq_job_id_and_mark_queued(
+        self, job_id: int, arq_job_id: str
+    ) -> SerializedEnrichmentJob:
+        self.calls.append("set_arq_job_id_and_mark_queued")
+        self.arq_job_id = arq_job_id
+        self.job = self.job.model_copy(
+            update={"phase": EnrichmentJobPhase.QUEUED}
+        )
         return self.job
 
     async def get(self, job_id: int) -> SerializedEnrichmentJob:
@@ -125,6 +150,15 @@ class FakeEnrichmentJobStore:
         return self.job
 
 
+class FakeEnrichmentQueueStore:
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+
+    async def enqueue(self, job_id: int) -> str:
+        self.calls.append(job_id)
+        return f"arq-{job_id}"
+
+
 @pytest.mark.asyncio
 async def test_register_visit_adds_or_gets_job() -> None:
     store = FakeEnrichmentJobStore()
@@ -134,6 +168,38 @@ async def test_register_visit_adds_or_gets_job() -> None:
 
     assert job == store.job
     assert store.calls == ["add_or_get"]
+
+
+@pytest.mark.asyncio
+async def test_register_visit_enqueues_pending_job() -> None:
+    store = FakeEnrichmentJobStore(make_job(EnrichmentJobPhase.PENDING))
+    queue = FakeEnrichmentQueueStore()
+    service = EnrichmentJobService(store, queue)
+
+    job = await service.register_visit(make_registration())
+
+    assert job.phase == EnrichmentJobPhase.QUEUED
+    assert store.arq_job_id == "arq-1"
+    assert queue.calls == [1]
+    assert store.calls == [
+        "add_or_get_internal",
+        "set_arq_job_id_and_mark_queued",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_register_visit_does_not_reenqueue_queued_job() -> None:
+    store = FakeEnrichmentJobStore(
+        make_job(EnrichmentJobPhase.QUEUED), arq_job_id="arq-1"
+    )
+    queue = FakeEnrichmentQueueStore()
+    service = EnrichmentJobService(store, queue)
+
+    job = await service.register_visit(make_registration())
+
+    assert job.phase == EnrichmentJobPhase.QUEUED
+    assert queue.calls == []
+    assert store.calls == ["add_or_get_internal"]
 
 
 @pytest.mark.asyncio
