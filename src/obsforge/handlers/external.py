@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from safir.arq import ArqQueue
 from safir.dependencies.arq import arq_dependency
 from safir.dependencies.db_session import db_session_dependency
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.stdlib import BoundLogger
 
 from ..config import config
+from ..exceptions import UnknownEnrichmentJobError
 from ..models import Index, SerializedEnrichmentJob, VisitRegistration
 from ..services import EnrichmentJobService
 from ..storage import EnrichmentJobStore, EnrichmentQueueStore
@@ -76,3 +77,46 @@ async def register_visit(
     job = await service.register_visit(registration)
     response.headers["Location"] = f"{config.path_prefix}/jobs/{job.id}"
     return job
+
+
+@external_router.get(
+    "/jobs/{job_id}",
+    response_model=SerializedEnrichmentJob,
+    response_model_exclude_none=True,
+    summary="Get an enrichment job",
+)
+async def get_job(
+    *,
+    job_id: int,
+    arq_queue: Annotated[ArqQueue, Depends(arq_dependency)],
+    session: Annotated[AsyncSession, Depends(db_session_dependency)],
+) -> SerializedEnrichmentJob:
+    store = EnrichmentJobStore(session)
+    queue = EnrichmentQueueStore(arq_queue)
+    service = EnrichmentJobService(store, queue)
+    try:
+        return await service.get(job_id)
+    except UnknownEnrichmentJobError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@external_router.delete(
+    "/jobs/{job_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Abort an enrichment job",
+)
+async def delete_job(
+    *,
+    job_id: int,
+    arq_queue: Annotated[ArqQueue, Depends(arq_dependency)],
+    session: Annotated[AsyncSession, Depends(db_session_dependency)],
+) -> None:
+    store = EnrichmentJobStore(session)
+    queue = EnrichmentQueueStore(arq_queue)
+    service = EnrichmentJobService(store, queue)
+    try:
+        aborted = await service.abort(job_id)
+    except UnknownEnrichmentJobError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    if not aborted:
+        raise HTTPException(status_code=404, detail="Queued job not found")
