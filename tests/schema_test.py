@@ -36,6 +36,7 @@ def test_enrichment_job_columns() -> None:
         "phase",
         "error_code",
         "error_message",
+        "arq_job_id",
         "registration_payload",
         "created_at",
         "updated_at",
@@ -46,6 +47,7 @@ def test_enrichment_job_columns() -> None:
     assert columns["visit"].type.python_type is int
     assert columns["error_code"].nullable is True
     assert columns["error_message"].nullable is True
+    assert columns["arq_job_id"].nullable is True
     assert columns["started_at"].nullable is True
     assert columns["completed_at"].nullable is True
 

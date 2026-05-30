@@ -2,7 +2,9 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, status
+from safir.arq import ArqQueue
+from safir.dependencies.arq import arq_dependency
 from safir.dependencies.db_session import db_session_dependency
 from safir.dependencies.logger import logger_dependency
 from safir.metadata import get_metadata
@@ -13,7 +15,7 @@ from structlog.stdlib import BoundLogger
 from ..config import config
 from ..models import Index, SerializedEnrichmentJob, VisitRegistration
 from ..services import EnrichmentJobService
-from ..storage import EnrichmentJobStore
+from ..storage import EnrichmentJobStore, EnrichmentQueueStore
 
 __all__ = ["external_router"]
 
@@ -58,13 +60,19 @@ async def get_index(
     "/register",
     response_model=SerializedEnrichmentJob,
     response_model_exclude_none=True,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Register a visit for enrichment",
 )
 async def register_visit(
     *,
     registration: VisitRegistration,
+    response: Response,
+    arq_queue: Annotated[ArqQueue, Depends(arq_dependency)],
     session: Annotated[AsyncSession, Depends(db_session_dependency)],
 ) -> SerializedEnrichmentJob:
     store = EnrichmentJobStore(session)
-    service = EnrichmentJobService(store)
-    return await service.register_visit(registration)
+    queue = EnrichmentQueueStore(arq_queue)
+    service = EnrichmentJobService(store, queue)
+    job = await service.register_visit(registration)
+    response.headers["Location"] = f"{config.path_prefix}/jobs/{job.id}"
+    return job
