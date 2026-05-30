@@ -27,6 +27,10 @@ class EnrichmentJobStoreProtocol(Protocol):
         self, job_id: int, arq_job_id: str
     ) -> SerializedEnrichmentJob: ...
 
+    async def get(self, job_id: int) -> SerializedEnrichmentJob: ...
+
+    async def get_internal(self, job_id: int) -> StoredEnrichmentJob: ...
+
     async def mark_queued(self, job_id: int) -> SerializedEnrichmentJob: ...
 
     async def mark_executing(self, job_id: int) -> SerializedEnrichmentJob: ...
@@ -42,6 +46,12 @@ class EnrichmentQueueStoreProtocol(Protocol):
     """Queue operations required by `EnrichmentJobService`."""
 
     async def enqueue(self, job_id: int) -> str: ...
+
+    async def abort(self, arq_job_id: str) -> bool: ...
+
+    async def status(self, arq_job_id: str) -> str | None: ...
+
+    async def succeeded(self, arq_job_id: str) -> bool | None: ...
 
 
 class EnrichmentJobService:
@@ -73,6 +83,59 @@ class EnrichmentJobService:
                 job.id, arq_job_id
             )
         return self._public(job)
+
+    async def get(self, job_id: int) -> SerializedEnrichmentJob:
+        """Retrieve an enrichment job with live queue status overlay."""
+        if self._queue is None:
+            return await self._store.get(job_id)
+
+        job = await self._store.get_internal(job_id)
+        if not job.arq_job_id:
+            return self._public(job)
+
+        status = await self._queue.status(job.arq_job_id)
+        if status == "in_progress" and job.phase == EnrichmentJobPhase.QUEUED:
+            return self._public(
+                job.model_copy(update={"phase": EnrichmentJobPhase.EXECUTING})
+            )
+        if status == "complete" and job.phase in (
+            EnrichmentJobPhase.PENDING,
+            EnrichmentJobPhase.QUEUED,
+            EnrichmentJobPhase.EXECUTING,
+        ):
+            success = await self._queue.succeeded(job.arq_job_id)
+            if success is False:
+                return self._public(
+                    job.model_copy(
+                        update={
+                            "phase": EnrichmentJobPhase.ERROR,
+                            "error_code": "WorkerError",
+                            "error_message": "Enrichment worker failed",
+                        }
+                    )
+                )
+            if success is True:
+                return self._public(
+                    job.model_copy(
+                        update={"phase": EnrichmentJobPhase.COMPLETED}
+                    )
+                )
+        return self._public(job)
+
+    async def abort(self, job_id: int) -> bool:
+        """Abort an enqueued enrichment job."""
+        if self._queue is None:
+            raise RuntimeError("Enrichment queue is not configured")
+
+        job = await self._store.get_internal(job_id)
+        if not job.arq_job_id or not await self._queue.abort(job.arq_job_id):
+            return False
+        await self._store.mark_failed(
+            job_id,
+            error_code="JobAborted",
+            error_message="Enrichment job aborted",
+        )
+        return True
 
     async def mark_queued(self, job_id: int) -> SerializedEnrichmentJob:
         """Mark a registered job as queued without regressing active jobs."""
