@@ -8,6 +8,7 @@ import structlog
 from arq.worker import Retry
 from safir.dependencies.db_session import db_session_dependency
 
+from obsforge.config import config
 from obsforge.services import EnrichmentJobService
 from obsforge.storage import EnrichmentJobStore
 
@@ -35,8 +36,20 @@ async def run_enrichment(ctx: dict[Any, Any], job_id: int) -> None:
         await service.mark_executing(job_id)
         await enrich_visit(job_id, context=ctx)
         await service.mark_completed(job_id)
-    except Retry:
-        raise
+    except Retry as e:
+        job_try = int(ctx.get("job_try", 1))
+        if job_try < config.enrichment_max_tries:
+            raise
+        logger.warning("Enrichment retries exhausted")
+        await service.mark_failed(
+            job_id,
+            error_code="RetriesExhausted",
+            error_message=(
+                "Enrichment job exhausted "
+                f"{config.enrichment_max_tries} arq attempts"
+            ),
+        )
+        raise RuntimeError("Enrichment retries exhausted") from e
     except asyncio.CancelledError:
         await service.mark_failed(
             job_id,
