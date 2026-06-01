@@ -5,13 +5,16 @@ from typing import Any
 
 import pytest
 import structlog
+from arq.worker import Retry
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from obsforge.config import config
 from obsforge.models import VisitRegistration
 from obsforge.schema import EnrichmentJobPhase
 from obsforge.storage import EnrichmentJobStore
 from obsforge.worker.functions import enrichment
+from obsforge.worker.main import WorkerSettings
 
 
 def make_registration(visit: int) -> VisitRegistration:
