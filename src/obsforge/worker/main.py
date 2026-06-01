@@ -46,6 +46,7 @@ class WorkerSettings:
     functions: ClassVar = [run_enrichment]
     redis_settings: ClassVar = config.arq_redis_settings
     queue_name: ClassVar = config.arq_queue_name
+    max_tries: ClassVar = config.enrichment_max_tries
     on_startup: ClassVar = startup
     on_shutdown: ClassVar = shutdown
     allow_abort_jobs: ClassVar = True

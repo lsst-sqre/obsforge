@@ -47,6 +47,12 @@ class Config(BaseSettings):
         "arq:queue", title="Name of the arq queue used by ObsForge"
     )
 
+    enrichment_max_tries: int = Field(
+        5,
+        title="Maximum arq attempts for an enrichment job",
+        ge=1,
+    )
+
     log_level: LogLevel = Field(
         LogLevel.INFO, title="Log level of the application's logger"
     )
