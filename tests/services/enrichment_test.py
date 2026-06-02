@@ -17,7 +17,7 @@ from obsforge.services import EnrichmentJobService
 
 def make_registration() -> VisitRegistration:
     return VisitRegistration(
-        instrument="LSSTCam",
+        instrument_name="LSSTCam",
         day_obs=20260327,
         visit_id="LSSTCam-20260327-123456",
         timespan=VisitTimespan(
@@ -34,7 +34,7 @@ def make_job(
     return SerializedEnrichmentJob(
         id=1,
         visit_id="LSSTCam-20260327-123456",
-        instrument="LSSTCam",
+        instrument_name="LSSTCam",
         day_obs=20260327,
         phase=phase,
         error_code=None,

@@ -16,7 +16,7 @@ pytestmark = pytest.mark.skipif(
 
 def make_payload(visit_id: str) -> dict[str, object]:
     return {
-        "instrument": "LSSTCam",
+        "instrument_name": "LSSTCam",
         "day_obs": 20260327,
         "visit_id": visit_id,
         "timespan": {

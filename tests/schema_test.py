@@ -22,7 +22,7 @@ def test_enrichment_job_columns() -> None:
     assert set(columns.keys()) == {
         "id",
         "visit_id",
-        "instrument",
+        "instrument_name",
         "day_obs",
         "phase",
         "error_code",
@@ -105,6 +105,8 @@ def test_obscore_columns() -> None:
     assert columns["dataproduct_type"].nullable is False
     assert columns["dataproduct_type"].server_default is not None
     assert columns["target_name"].server_default is None
+    assert columns["instrument_name"].nullable is False
+    assert columns["instrument_name"].server_default is None
 
 
 def test_obscore_column_info() -> None:
@@ -138,4 +140,4 @@ def test_obscore_constraints() -> None:
     assert "obscore_dataproduct_type_check" in constraint_names
     assert "obscore_target_name_null_check" in constraint_names
     assert "obscore_access_estsize_null_check" in constraint_names
-    assert "obscore_instrument_name_check" in constraint_names
+    assert "obscore_instrument_name_check" not in constraint_names

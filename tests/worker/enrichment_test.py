@@ -20,7 +20,7 @@ from obsforge.worker.main import WorkerSettings
 def make_registration(visit_id: str) -> VisitRegistration:
     return VisitRegistration.model_validate(
         {
-            "instrument": "LSSTCam",
+            "instrument_name": "LSSTCam",
             "day_obs": 20260327,
             "visit_id": visit_id,
             "timespan": {

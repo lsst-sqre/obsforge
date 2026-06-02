@@ -21,7 +21,7 @@ def make_registration(
     day_obs: int = 20260327,
 ) -> VisitRegistration:
     return VisitRegistration(
-        instrument="LSSTCam",
+        instrument_name="LSSTCam",
         day_obs=day_obs,
         visit_id=visit_id,
         timespan=VisitTimespan(

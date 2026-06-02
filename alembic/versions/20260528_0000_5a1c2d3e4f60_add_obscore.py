@@ -84,7 +84,6 @@ def upgrade() -> None:
         sa.Column(
             "instrument_name",
             sa.Text(),
-            server_default="LSSTCAM",
             nullable=False,
         ),
         sa.Column(
@@ -134,10 +133,6 @@ def upgrade() -> None:
         sa.CheckConstraint("o_ucd = 'phot.flux'", name="obscore_o_ucd_check"),
         sa.CheckConstraint(
             "pol_xel IS NULL", name="obscore_pol_xel_null_check"
-        ),
-        sa.CheckConstraint(
-            "instrument_name = 'LSSTCAM'",
-            name="obscore_instrument_name_check",
         ),
         sa.CheckConstraint(
             "facility_name = 'Rubin:Simonyi'",

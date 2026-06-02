@@ -25,7 +25,7 @@ def upgrade() -> None:
         "enrichment_job",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("visit_id", sa.Text(), nullable=False),
-        sa.Column("instrument", sa.Text(), nullable=False),
+        sa.Column("instrument_name", sa.Text(), nullable=False),
         sa.Column("day_obs", sa.Integer(), nullable=False),
         sa.Column(
             "phase",
@@ -54,9 +54,9 @@ def upgrade() -> None:
         sa.UniqueConstraint("visit_id", name="enrichment_job_visit_id_key"),
     )
     op.create_index(
-        "enrichment_job_by_instrument_day_obs",
+        "enrichment_job_by_instrument_name_day_obs",
         "enrichment_job",
-        ["instrument", "day_obs"],
+        ["instrument_name", "day_obs"],
         unique=False,
     )
     op.create_index(
@@ -72,7 +72,8 @@ def downgrade() -> None:
         "enrichment_job_by_phase_updated_at", table_name="enrichment_job"
     )
     op.drop_index(
-        "enrichment_job_by_instrument_day_obs", table_name="enrichment_job"
+        "enrichment_job_by_instrument_name_day_obs",
+        table_name="enrichment_job",
     )
     op.drop_table("enrichment_job")
     sa.Enum(name="enrichmentjobphase").drop(op.get_bind(), checkfirst=True)

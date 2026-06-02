@@ -53,10 +53,6 @@ class ObsCore(SchemaBase):
         CheckConstraint("o_ucd = 'phot.flux'", name="obscore_o_ucd_check"),
         CheckConstraint("pol_xel IS NULL", name="obscore_pol_xel_null_check"),
         CheckConstraint(
-            "instrument_name = 'LSSTCAM'",
-            name="obscore_instrument_name_check",
-        ),
-        CheckConstraint(
             "facility_name = 'Rubin:Simonyi'",
             name="obscore_facility_name_check",
         ),
@@ -257,7 +253,6 @@ class ObsCore(SchemaBase):
     )
     instrument_name: Mapped[str] = mapped_column(
         nullable=False,
-        server_default="LSSTCAM",
         info=_info(
             "",
             "The name of the instrument used for the observation",

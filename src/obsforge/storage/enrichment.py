@@ -53,7 +53,7 @@ class EnrichmentJobStore:
             insert(SQLEnrichmentJob)
             .values(
                 visit_id=registration.visit_id,
-                instrument=registration.instrument,
+                instrument_name=registration.instrument_name,
                 day_obs=registration.day_obs,
                 phase=EnrichmentJobPhase.PENDING,
                 registration_payload=payload,
@@ -239,7 +239,7 @@ class EnrichmentJobStore:
         return StoredEnrichmentJob(
             id=job.id,
             visit_id=job.visit_id,
-            instrument=job.instrument,
+            instrument_name=job.instrument_name,
             day_obs=job.day_obs,
             phase=job.phase,
             error_code=job.error_code,

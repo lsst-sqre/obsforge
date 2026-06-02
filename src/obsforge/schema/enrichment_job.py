@@ -30,7 +30,7 @@ class EnrichmentJob(SchemaBase):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     visit_id: Mapped[str]
-    instrument: Mapped[str]
+    instrument_name: Mapped[str]
     day_obs: Mapped[int]
     phase: Mapped[EnrichmentJobPhase]
     error_code: Mapped[str | None]
@@ -44,6 +44,10 @@ class EnrichmentJob(SchemaBase):
 
     __table_args__ = (
         UniqueConstraint("visit_id", name="enrichment_job_visit_id_key"),
-        Index("enrichment_job_by_instrument_day_obs", "instrument", "day_obs"),
+        Index(
+            "enrichment_job_by_instrument_name_day_obs",
+            "instrument_name",
+            "day_obs",
+        ),
         Index("enrichment_job_by_phase_updated_at", "phase", "updated_at"),
     )

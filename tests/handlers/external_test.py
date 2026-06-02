@@ -43,7 +43,7 @@ async def test_register_visit(
             return SerializedEnrichmentJob(
                 id=42,
                 visit_id=registration.visit_id,
-                instrument=registration.instrument,
+                instrument_name=registration.instrument_name,
                 day_obs=registration.day_obs,
                 phase=EnrichmentJobPhase.QUEUED,
                 error_code=None,
@@ -60,7 +60,7 @@ async def test_register_visit(
         MockEnrichmentJobService,
     )
     payload = {
-        "instrument": "LSSTCam",
+        "instrument_name": "LSSTCam",
         "day_obs": 20260327,
         "visit_id": "LSSTCam-20260327-123456",
         "timespan": {
@@ -76,7 +76,7 @@ async def test_register_visit(
     assert response.json() == {
         "id": 42,
         "visit_id": "LSSTCam-20260327-123456",
-        "instrument": "LSSTCam",
+        "instrument_name": "LSSTCam",
         "day_obs": 20260327,
         "phase": "QUEUED",
         "registration_payload": payload,
@@ -89,7 +89,7 @@ async def test_register_visit(
 async def test_register_visit_persists_job(client: AsyncClient) -> None:
     """Test ``POST /obsforge/register`` against the database."""
     payload = {
-        "instrument": "LSSTCam",
+        "instrument_name": "LSSTCam",
         "day_obs": 20260327,
         "visit_id": "LSSTCam-20260327-123456",
         "timespan": {
@@ -110,7 +110,7 @@ async def test_register_visit_persists_job(client: AsyncClient) -> None:
     assert first_response.headers["Location"] == expected_location
     assert first["id"] > 0
     assert first["visit_id"] == "LSSTCam-20260327-123456"
-    assert first["instrument"] == "LSSTCam"
+    assert first["instrument_name"] == "LSSTCam"
     assert first["day_obs"] == 20260327
     assert first["phase"] == "QUEUED"
     assert first["registration_payload"] == payload
@@ -122,7 +122,7 @@ async def test_register_visit_persists_job(client: AsyncClient) -> None:
 async def test_get_job(client: AsyncClient) -> None:
     """Test ``GET /obsforge/jobs/{job_id}``."""
     payload = {
-        "instrument": "LSSTCam",
+        "instrument_name": "LSSTCam",
         "day_obs": 20260327,
         "visit_id": "LSSTCam-20260327-123456",
         "timespan": {

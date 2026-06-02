@@ -44,7 +44,7 @@ class VisitTimespan(BaseModel):
 class VisitRegistration(BaseModel):
     """Prompt Publication payload registering one visit."""
 
-    instrument: str = Field(..., title="Instrument name")
+    instrument_name: str = Field(..., title="Instrument name")
 
     day_obs: int = Field(..., title="Visit day")
 
@@ -60,7 +60,7 @@ class SerializedEnrichmentJob(BaseModel):
 
     visit_id: str
 
-    instrument: str
+    instrument_name: str
 
     day_obs: int
 
@@ -97,6 +97,8 @@ class ObsCoreUpsert(BaseModel):
     obs_id: str
 
     obs_publisher_did: str
+
+    instrument_name: str
 
     access_url: str
 

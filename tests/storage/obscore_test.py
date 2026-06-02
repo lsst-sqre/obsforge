@@ -21,6 +21,7 @@ def make_obscore(
         dataproduct_subtype=dataproduct_subtype,
         obs_id=obs_id,
         obs_publisher_did=f"ivo://rubin/{visit_id}",
+        instrument_name="LATISS",
         access_url=f"https://example.com/datalink/{visit_id}",
         s_ra=s_ra,
         s_dec=-45.6,
@@ -56,7 +57,7 @@ async def test_upsert_inserts_obscore_record(
     )
     assert created.s_fov == 3.5
     assert created.o_ucd == "phot.flux"
-    assert created.instrument_name == "LSSTCAM"
+    assert created.instrument_name == "LATISS"
     assert created.facility_name == "Rubin:Simonyi"
     assert created.target_name is None
     assert created.access_estsize is None
