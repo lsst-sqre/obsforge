@@ -1,0 +1,45 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: obsdb
+      POSTGRES_PASSWORD: INSECURE-PASSWORD
+      POSTGRES_USER: obsforge
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          PGPASSWORD=$$POSTGRES_PASSWORD psql
+          --user=$$POSTGRES_USER
+          --dbname=$$POSTGRES_DB
+          --host=127.0.0.1
+          --quiet
+          --no-align
+          --tuples-only
+          -1
+          --command="SELECT 1"
+      interval: 1s
+      timeout: 1s
+      retries: 30
+      start_period: 1s
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+
+  redis:
+    image: redis:8
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 1s
+      timeout: 1s
+      retries: 30
+      start_period: 1s
+    ports:
+      - "127.0.0.1:6379:6379"
+
+volumes:
+  postgres-data:
