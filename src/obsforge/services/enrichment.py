@@ -2,6 +2,9 @@
 
 from typing import Protocol
 
+import structlog
+from structlog.stdlib import BoundLogger
+
 from obsforge.models import (
     SerializedEnrichmentJob,
     StoredEnrichmentJob,
@@ -61,9 +64,11 @@ class EnrichmentJobService:
         self,
         store: EnrichmentJobStoreProtocol,
         queue: EnrichmentQueueStoreProtocol | None = None,
+        logger: BoundLogger | None = None,
     ) -> None:
         self._store = store
         self._queue = queue
+        self._logger = logger or structlog.get_logger("obsforge")
 
     async def register_visit(
         self, registration: VisitRegistration
