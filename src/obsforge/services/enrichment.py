@@ -92,6 +92,10 @@ class EnrichmentJobService:
             )
             self._logger_for_job(queued).info("Queued enrichment job")
             return queued
+        self._logger_for_job(job).debug(
+            "Enrichment job already registered",
+            arq_job_id=job.arq_job_id,
+        )
         return self._public(job)
 
     async def get(self, job_id: int) -> SerializedEnrichmentJob:
@@ -105,6 +109,12 @@ class EnrichmentJobService:
 
         status = await self._queue.status(job.arq_job_id)
         if status == "in_progress" and job.phase == EnrichmentJobPhase.QUEUED:
+            self._logger_for_job(job).debug(
+                "Overlaying enrichment job queue status",
+                arq_job_id=job.arq_job_id,
+                arq_status=status,
+                overlay_phase=EnrichmentJobPhase.EXECUTING.value,
+            )
             return self._public(
                 job.model_copy(update={"phase": EnrichmentJobPhase.EXECUTING})
             )
@@ -115,6 +125,13 @@ class EnrichmentJobService:
         ):
             success = await self._queue.succeeded(job.arq_job_id)
             if success is False:
+                self._logger_for_job(job).debug(
+                    "Overlaying enrichment job queue status",
+                    arq_job_id=job.arq_job_id,
+                    arq_status=status,
+                    arq_success=success,
+                    overlay_phase=EnrichmentJobPhase.ERROR.value,
+                )
                 return self._public(
                     job.model_copy(
                         update={
@@ -125,6 +142,13 @@ class EnrichmentJobService:
                     )
                 )
             if success is True:
+                self._logger_for_job(job).debug(
+                    "Overlaying enrichment job queue status",
+                    arq_job_id=job.arq_job_id,
+                    arq_status=status,
+                    arq_success=success,
+                    overlay_phase=EnrichmentJobPhase.COMPLETED.value,
+                )
                 return self._public(
                     job.model_copy(
                         update={"phase": EnrichmentJobPhase.COMPLETED}
