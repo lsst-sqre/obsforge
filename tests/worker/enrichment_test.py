@@ -8,6 +8,7 @@ import structlog
 from arq.worker import Retry
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession
+from structlog.testing import capture_logs
 
 from obsforge.config import config
 from obsforge.models import VisitRegistration
@@ -68,10 +69,11 @@ async def test_run_enrichment_marks_failed(
     await store.mark_queued(created.id)
     monkeypatch.setattr(enrichment, "enrich_visit", fail)
 
-    with pytest.raises(RuntimeError, match="metadata missing"):
-        await enrichment.run_enrichment(
-            {"logger": structlog.get_logger("test")}, created.id
-        )
+    with capture_logs() as logs:
+        with pytest.raises(RuntimeError, match="metadata missing"):
+            await enrichment.run_enrichment(
+                {"logger": structlog.get_logger("test")}, created.id
+            )
 
     seen = await store.get(created.id)
     assert seen.phase == EnrichmentJobPhase.ERROR
@@ -79,6 +81,15 @@ async def test_run_enrichment_marks_failed(
     assert seen.error_message == "metadata missing"
     assert seen.started_at is not None
     assert seen.completed_at is not None
+    failure_log = next(
+        log for log in logs if log["event"] == "Enrichment job failed"
+    )
+    assert failure_log["log_level"] == "error"
+    assert failure_log["enrichment_job_id"] == created.id
+    assert failure_log["job_try"] == 1
+    assert failure_log["max_tries"] == config.enrichment_max_tries
+    assert failure_log["error_code"] == "RuntimeError"
+    assert failure_log["error_message"] == "metadata missing"
 
 
 def test_worker_settings_uses_enrichment_max_tries() -> None:
@@ -104,14 +115,15 @@ async def test_run_enrichment_reraises_retry_before_final_attempt(
     await store.mark_queued(created.id)
     monkeypatch.setattr(enrichment, "enrich_visit", retry)
 
-    with pytest.raises(Retry):
-        await enrichment.run_enrichment(
-            {
-                "logger": structlog.get_logger("test"),
-                "job_try": config.enrichment_max_tries - 1,
-            },
-            created.id,
-        )
+    with capture_logs() as logs:
+        with pytest.raises(Retry):
+            await enrichment.run_enrichment(
+                {
+                    "logger": structlog.get_logger("test"),
+                    "job_try": config.enrichment_max_tries - 1,
+                },
+                created.id,
+            )
 
     seen = await store.get(created.id)
     assert seen.phase == EnrichmentJobPhase.EXECUTING
@@ -119,6 +131,13 @@ async def test_run_enrichment_reraises_retry_before_final_attempt(
     assert seen.error_message is None
     assert seen.started_at is not None
     assert seen.completed_at is None
+    retry_log = next(
+        log for log in logs if log["event"] == "Retrying enrichment job"
+    )
+    assert retry_log["log_level"] == "debug"
+    assert retry_log["enrichment_job_id"] == created.id
+    assert retry_log["job_try"] == config.enrichment_max_tries - 1
+    assert retry_log["max_tries"] == config.enrichment_max_tries
 
 
 @pytest.mark.asyncio
@@ -139,14 +158,15 @@ async def test_run_enrichment_marks_failed_on_final_retry(
     await store.mark_queued(created.id)
     monkeypatch.setattr(enrichment, "enrich_visit", retry)
 
-    with pytest.raises(RuntimeError, match="retries exhausted"):
-        await enrichment.run_enrichment(
-            {
-                "logger": structlog.get_logger("test"),
-                "job_try": config.enrichment_max_tries,
-            },
-            created.id,
-        )
+    with capture_logs() as logs:
+        with pytest.raises(RuntimeError, match="retries exhausted"):
+            await enrichment.run_enrichment(
+                {
+                    "logger": structlog.get_logger("test"),
+                    "job_try": config.enrichment_max_tries,
+                },
+                created.id,
+            )
 
     seen = await store.get(created.id)
     assert seen.phase == EnrichmentJobPhase.ERROR
@@ -156,3 +176,10 @@ async def test_run_enrichment_marks_failed_on_final_retry(
     )
     assert seen.started_at is not None
     assert seen.completed_at is not None
+    exhausted_log = next(
+        log for log in logs if log["event"] == "Enrichment retries exhausted"
+    )
+    assert exhausted_log["log_level"] == "warning"
+    assert exhausted_log["enrichment_job_id"] == created.id
+    assert exhausted_log["job_try"] == config.enrichment_max_tries
+    assert exhausted_log["max_tries"] == config.enrichment_max_tries
