@@ -25,6 +25,7 @@ dependencies = [
     "pydantic-settings>=2",
     "safir[arq,db]>=15",
     "sqlalchemy[asyncio]>=2",
+    "structlog",
     "uvicorn[standard]>=0.34",
 ]
 dynamic = ["version"]
