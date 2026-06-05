@@ -4,9 +4,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+import structlog
 from httpx import AsyncClient
+from structlog.testing import capture_logs
 
 from obsforge.config import config
+from obsforge.handlers import external
 from obsforge.models import SerializedEnrichmentJob, VisitRegistration
 from obsforge.schema import EnrichmentJobPhase
 
@@ -26,15 +29,30 @@ async def test_get_index(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_get_index_logs_at_debug() -> None:
+    """Test ``GET /obsforge/`` emits only a debug application log."""
+    with capture_logs() as logs:
+        await external.get_index(logger=structlog.get_logger("test"))
+
+    assert logs == [
+        {"event": "Request for application metadata", "log_level": "debug"}
+    ]
+
+
+@pytest.mark.asyncio
 async def test_register_visit(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Test ``POST /obsforge/register``."""
+    loggers: list[Any] = []
 
     class MockEnrichmentJobService:
-        def __init__(self, store: Any, queue: Any) -> None:
+        def __init__(
+            self, store: Any, queue: Any, logger: Any | None = None
+        ) -> None:
             self.store = store
             self.queue = queue
+            loggers.append(logger)
 
         async def register_visit(
             self, registration: VisitRegistration
@@ -73,6 +91,8 @@ async def test_register_visit(
 
     assert response.status_code == 202
     assert response.headers["Location"] == "/obsforge/jobs/42"
+    assert len(loggers) == 1
+    assert loggers[0] is not None
     assert response.json() == {
         "id": 42,
         "visit": 2026010800095,
