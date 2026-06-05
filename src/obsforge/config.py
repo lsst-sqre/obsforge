@@ -6,7 +6,7 @@ from arq.connections import RedisSettings
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from safir.arq import ArqMode, build_arq_redis_settings
-from safir.logging import LogLevel, Profile
+from safir.logging import LogLevel, Profile, configure_logging
 from safir.pydantic import EnvAsyncPostgresDsn, EnvRedisDsn
 
 __all__ = ["Config", "config"]
@@ -81,3 +81,9 @@ class Config(BaseSettings):
 
 config = Config()
 """Configuration for obsforge."""
+
+configure_logging(
+    profile=config.log_profile,
+    log_level=config.log_level,
+    name="obsforge",
+)

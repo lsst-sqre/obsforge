@@ -17,7 +17,7 @@ from safir.database import create_database_engine, is_database_current
 from safir.dependencies.arq import arq_dependency
 from safir.dependencies.db_session import db_session_dependency
 from safir.dependencies.http_client import http_client_dependency
-from safir.logging import configure_logging, configure_uvicorn_logging
+from safir.logging import configure_uvicorn_logging
 from safir.middleware.x_forwarded import XForwardedMiddleware
 from safir.slack.webhook import SlackRouteErrorHandler
 
@@ -60,11 +60,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await http_client_dependency.aclose()
 
 
-configure_logging(
-    profile=config.log_profile,
-    log_level=config.log_level,
-    name="obsforge",
-)
 configure_uvicorn_logging(config.log_level)
 
 app = FastAPI(
