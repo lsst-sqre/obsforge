@@ -242,7 +242,7 @@ async def test_register_visit_logs_enqueued_job() -> None:
 
 
 @pytest.mark.asyncio
-async def test_register_visit_does_not_info_log_duplicate_queue_job() -> None:
+async def test_register_visit_debug_logs_duplicate_queue_job() -> None:
     store = FakeEnrichmentJobStore(
         make_job(EnrichmentJobPhase.QUEUED), arq_job_id="arq-1"
     )
