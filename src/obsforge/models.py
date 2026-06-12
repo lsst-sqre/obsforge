@@ -13,6 +13,7 @@ __all__ = [
     "ObsCoreUpsert",
     "SerializedEnrichmentJob",
     "SerializedObsCore",
+    "StoredEnrichmentJob",
     "VisitRegistration",
     "VisitTimespan",
 ]
@@ -78,6 +79,12 @@ class SerializedEnrichmentJob(BaseModel):
     started_at: datetime | None
 
     completed_at: datetime | None
+
+
+class StoredEnrichmentJob(SerializedEnrichmentJob):
+    """Internal enrichment job representation with queue transport state."""
+
+    arq_job_id: str | None
 
 
 class ObsCoreRecord(BaseModel):
