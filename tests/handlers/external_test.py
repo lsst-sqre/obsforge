@@ -1,9 +1,17 @@
 """Tests for the obsforge.handlers.external module and routes."""
 
+from datetime import UTC, datetime
+from typing import Any
+
 import pytest
+import structlog
 from httpx import AsyncClient
+from structlog.testing import capture_logs
 
 from obsforge.config import config
+from obsforge.handlers import external
+from obsforge.models import SerializedEnrichmentJob, VisitRegistration
+from obsforge.schema import EnrichmentJobPhase
 
 
 @pytest.mark.asyncio
@@ -18,3 +26,143 @@ async def test_get_index(client: AsyncClient) -> None:
     assert isinstance(metadata["description"], str)
     assert isinstance(metadata["repository_url"], str)
     assert isinstance(metadata["documentation_url"], str)
+
+
+@pytest.mark.asyncio
+async def test_get_index_logs_at_debug() -> None:
+    """Test ``GET /obsforge/`` emits only a debug application log."""
+    with capture_logs() as logs:
+        await external.get_index(logger=structlog.get_logger("test"))
+
+    assert logs == [
+        {"event": "Request for application metadata", "log_level": "debug"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_register_visit(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test ``POST /obsforge/register``."""
+    loggers: list[Any] = []
+
+    class MockEnrichmentJobService:
+        def __init__(
+            self, store: Any, queue: Any, logger: Any | None = None
+        ) -> None:
+            self.store = store
+            self.queue = queue
+            loggers.append(logger)
+
+        async def register_visit(
+            self, registration: VisitRegistration
+        ) -> SerializedEnrichmentJob:
+            now = datetime(2026, 1, 9, 2, 45, 51, tzinfo=UTC)
+            return SerializedEnrichmentJob(
+                id=42,
+                visit=registration.visit,
+                instrument=registration.instrument,
+                day_obs=registration.day_obs,
+                phase=EnrichmentJobPhase.QUEUED,
+                error_code=None,
+                error_message=None,
+                registration_payload=registration.model_dump(mode="json"),
+                created_at=now,
+                updated_at=now,
+                started_at=None,
+                completed_at=None,
+            )
+
+    monkeypatch.setattr(
+        "obsforge.handlers.external.EnrichmentJobService",
+        MockEnrichmentJobService,
+    )
+    payload = {
+        "instrument": "LSSTCam",
+        "day_obs": 20260108,
+        "visit": 2026010800095,
+        "timespan": {
+            "begin": "2026-01-09T02:45:51Z",
+            "end": "2026-01-09T02:46:26Z",
+        },
+    }
+
+    response = await client.post("/obsforge/register", json=payload)
+
+    assert response.status_code == 202
+    assert response.headers["Location"] == "/obsforge/jobs/42"
+    assert len(loggers) == 1
+    assert loggers[0] is not None
+    assert response.json() == {
+        "id": 42,
+        "visit": 2026010800095,
+        "instrument": "LSSTCam",
+        "day_obs": 20260108,
+        "phase": "QUEUED",
+        "registration_payload": payload,
+        "created_at": "2026-01-09T02:45:51Z",
+        "updated_at": "2026-01-09T02:45:51Z",
+    }
+
+
+@pytest.mark.asyncio
+async def test_register_visit_persists_job(client: AsyncClient) -> None:
+    """Test ``POST /obsforge/register`` against the database."""
+    payload = {
+        "instrument": "LSSTCam",
+        "day_obs": 20260108,
+        "visit": 2026010800095,
+        "timespan": {
+            "begin": "2026-01-09T02:45:51Z",
+            "end": "2026-01-09T02:46:26Z",
+        },
+    }
+
+    first_response = await client.post("/obsforge/register", json=payload)
+    second_response = await client.post("/obsforge/register", json=payload)
+
+    assert first_response.status_code == 202
+    assert second_response.status_code == 202
+    first = first_response.json()
+    second = second_response.json()
+    assert second == first
+    expected_location = f"/obsforge/jobs/{first['id']}"
+    assert first_response.headers["Location"] == expected_location
+    assert first["id"] > 0
+    assert first["visit"] == 2026010800095
+    assert first["instrument"] == "LSSTCam"
+    assert first["day_obs"] == 20260108
+    assert first["phase"] == "QUEUED"
+    assert first["registration_payload"] == payload
+    assert first["created_at"].endswith("Z")
+    assert first["updated_at"].endswith("Z")
+
+
+@pytest.mark.asyncio
+async def test_get_job(client: AsyncClient) -> None:
+    """Test ``GET /obsforge/jobs/{job_id}``."""
+    payload = {
+        "instrument": "LSSTCam",
+        "day_obs": 20260327,
+        "visit": "20260327123456",
+        "timespan": {
+            "begin": "2026-03-27T08:15:10Z",
+            "end": "2026-03-27T08:15:45Z",
+        },
+    }
+    created_response = await client.post("/obsforge/register", json=payload)
+    job_id = created_response.json()["id"]
+
+    response = await client.get(f"/obsforge/jobs/{job_id}")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == job_id
+    assert response.json()["phase"] == "QUEUED"
+
+
+@pytest.mark.asyncio
+async def test_get_unknown_job_returns_404(client: AsyncClient) -> None:
+    """Test missing job status responses."""
+    response = await client.get("/obsforge/jobs/404")
+
+    assert response.status_code == 404
