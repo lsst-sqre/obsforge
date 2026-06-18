@@ -21,6 +21,8 @@ requires-python = ">=3.14"
 dependencies = [
     "alembic[tz]>=1.16",
     "fastapi>=0.100",
+    "lsst-daf-butler[remote]>=29",
+    "lsst-dax-obscore",
     "pydantic>2",
     "pydantic-settings>=2",
     "safir[arq,db]>=15",
