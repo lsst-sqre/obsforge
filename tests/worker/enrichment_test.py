@@ -1,12 +1,14 @@
 """Tests for enrichment worker functions."""
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import pytest
 import structlog
 from arq.worker import Retry
 from fastapi import FastAPI
+from safir.dependencies.db_session import db_session_dependency
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.testing import capture_logs
 
@@ -14,6 +16,7 @@ from obsforge.config import config
 from obsforge.models import VisitRegistration
 from obsforge.schema import EnrichmentJobPhase
 from obsforge.storage import EnrichmentJobStore
+from obsforge.worker import main as worker_main
 from obsforge.worker.functions import enrichment
 from obsforge.worker.main import WorkerSettings
 
@@ -101,6 +104,71 @@ async def test_run_enrichment_marks_failed(
 def test_worker_settings_uses_enrichment_max_tries() -> None:
     """Test arq and the worker function share the retry limit."""
     assert WorkerSettings.max_tries == config.enrichment_max_tries
+
+
+@pytest.mark.asyncio
+async def test_worker_startup_initializes_obscore_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test worker startup builds shared ObsCore enrichment resources."""
+    seen: dict[str, Any] = {}
+
+    class FakeButlerConfig:
+        def __init__(self, path_or_url: str) -> None:
+            seen["obscore_config_path"] = path_or_url
+
+    class FakeExporterConfig:
+        @classmethod
+        def model_validate(cls, value: Any) -> str:
+            seen["exporter_config_data"] = value
+            return "exporter-config"
+
+    class FakeLabeledButlerFactory:
+        def __init__(self, repositories: dict[str, str]) -> None:
+            seen["repositories"] = repositories
+
+    async def initialize_db_session(*args: Any, **kwargs: Any) -> None:
+        seen["db_session"] = (args, kwargs)
+
+    monkeypatch.setattr(config, "butler_label", "prompt")
+    monkeypatch.setattr(config, "butler_repository", Path("/repo/prompt"))
+    monkeypatch.setattr(config, "obscore_config", Path("/configs/prompt.yaml"))
+    monkeypatch.setattr(
+        config,
+        "obscore_dataset_type",
+        "preliminary_visit_image",
+    )
+    monkeypatch.setattr(
+        worker_main, "LabeledButlerFactory", FakeLabeledButlerFactory
+    )
+    monkeypatch.setattr(worker_main, "ButlerConfig", FakeButlerConfig)
+    monkeypatch.setattr(worker_main, "ExporterConfig", FakeExporterConfig)
+    monkeypatch.setattr(
+        db_session_dependency, "initialize", initialize_db_session
+    )
+
+    ctx: dict[Any, Any] = {}
+    await worker_main.startup(ctx)
+
+    assert ctx["labeled_butler_factory"].__class__ is FakeLabeledButlerFactory
+    assert ctx["obscore_config"] == "exporter-config"
+    assert ctx["obscore_dataset_type"] == "preliminary_visit_image"
+    assert seen["repositories"] == {"prompt": "/repo/prompt"}
+    assert seen["obscore_config_path"] == "/configs/prompt.yaml"
+    assert seen["exporter_config_data"].__class__ is FakeButlerConfig
+    assert seen["db_session"][1]["isolation_level"] == "REPEATABLE READ"
+
+
+@pytest.mark.asyncio
+async def test_worker_startup_requires_butler_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test worker startup fails clearly without a Butler repository."""
+    monkeypatch.setattr(config, "butler_repository", None)
+    monkeypatch.setattr(config, "obscore_config", Path("/configs/prompt.yaml"))
+
+    with pytest.raises(RuntimeError, match="OBSFORGE_BUTLER_REPOSITORY"):
+        await worker_main.startup({})
 
 
 @pytest.mark.asyncio

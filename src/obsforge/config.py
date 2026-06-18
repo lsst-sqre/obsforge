@@ -1,9 +1,10 @@
 """Configuration definition."""
 
+from pathlib import Path
 from typing import cast
 
 from arq.connections import RedisSettings
-from pydantic import Field, SecretStr
+from pydantic import Field, HttpUrl, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from safir.arq import ArqMode, build_arq_redis_settings
 from safir.logging import LogLevel, Profile, configure_logging
@@ -51,6 +52,32 @@ class Config(BaseSettings):
         5,
         title="Maximum arq attempts for an enrichment job",
         ge=1,
+    )
+
+    butler_label: str = Field(
+        "prompt",
+        title="Butler repository label",
+        description="Label used by the worker to create Prompt Butler clients",
+    )
+
+    butler_repository: HttpUrl | Path | None = Field(
+        None,
+        title="Butler repository",
+        description=(
+            "Prompt Butler repository path or URL for worker enrichment"
+        ),
+    )
+
+    obscore_config: HttpUrl | Path | None = Field(
+        None,
+        title="ObsCore exporter configuration",
+        description="Path or URL to the lsst.dax.obscore prompt.yaml config",
+    )
+
+    obscore_dataset_type: str = Field(
+        "preliminary_visit_image",
+        title="ObsCore dataset type",
+        description="Dataset type selected from the ObsCore exporter config",
     )
 
     log_level: LogLevel = Field(
