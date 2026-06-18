@@ -1,6 +1,7 @@
 """Tests for enrichment job business logic."""
 
 from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
 from structlog.testing import capture_logs
@@ -9,6 +10,7 @@ from obsforge.exceptions import InvalidEnrichmentJobTransitionError
 from obsforge.models import (
     SerializedEnrichmentJob,
     StoredEnrichmentJob,
+    VisitDataset,
     VisitRegistration,
     VisitTimespan,
 )
@@ -21,6 +23,12 @@ def make_registration() -> VisitRegistration:
         instrument="LSSTCam",
         day_obs=20260108,
         visit=2026010800095,
+        datasets=[
+            VisitDataset(
+                dataset_type="preliminary_visit_image",
+                id=UUID("019ba0a6-0173-765f-bf27-56884ff9342a"),
+            )
+        ],
         timespan=VisitTimespan(
             begin=datetime(2026, 1, 9, 2, 45, 51, tzinfo=UTC),
             end=datetime(2026, 1, 9, 2, 46, 26, tzinfo=UTC),
