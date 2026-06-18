@@ -1,6 +1,7 @@
 """Tests for enrichment job storage."""
 
 from datetime import UTC, datetime
+from uuid import UUID
 
 import pytest
 from safir.dependencies.db_session import db_session_dependency
@@ -10,7 +11,7 @@ from obsforge.exceptions import (
     InvalidEnrichmentJobTransitionError,
     UnknownEnrichmentJobError,
 )
-from obsforge.models import VisitRegistration, VisitTimespan
+from obsforge.models import VisitDataset, VisitRegistration, VisitTimespan
 from obsforge.schema import EnrichmentJobPhase
 from obsforge.storage import EnrichmentJobStore
 
@@ -25,6 +26,12 @@ def make_registration(
         instrument=instrument,
         day_obs=day_obs,
         visit=visit,
+        datasets=[
+            VisitDataset(
+                dataset_type="preliminary_visit_image",
+                id=UUID("019ba0a6-0173-765f-bf27-56884ff9342a"),
+            )
+        ],
         timespan=VisitTimespan(
             begin=datetime(2026, 1, 9, 2, 45, 51, tzinfo=UTC),
             end=datetime(2026, 1, 9, 2, 46, 26, tzinfo=UTC),

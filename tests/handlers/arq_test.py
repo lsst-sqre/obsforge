@@ -14,11 +14,17 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def make_payload(visit_id: str) -> dict[str, object]:
+def make_payload(visit: int) -> dict[str, object]:
     return {
         "instrument": "LSSTCam",
         "day_obs": 20260327,
-        "visit_id": visit_id,
+        "visit": visit,
+        "datasets": [
+            {
+                "dataset_type": "preliminary_visit_image",
+                "id": "019ba0a6-0173-765f-bf27-56884ff9342a",
+            }
+        ],
         "timespan": {
             "begin": "2026-03-27T08:15:10Z",
             "end": "2026-03-27T08:15:45Z",
@@ -34,7 +40,7 @@ async def test_mock_arq_queue_status_overlay(
     arq_queue = await arq_dependency()
     assert isinstance(arq_queue, MockArqQueue)
     response = await client.post(
-        "/obsforge/register", json=make_payload("LSSTCam-20260327-123456")
+        "/obsforge/register", json=make_payload(20260327123456)
     )
     job_id = response.json()["id"]
     store = EnrichmentJobStore(db_session)
@@ -60,7 +66,7 @@ async def test_mock_arq_queue_abort(
 ) -> None:
     """Test aborting a mocked arq job."""
     response = await client.post(
-        "/obsforge/register", json=make_payload("LSSTCam-20260327-654321")
+        "/obsforge/register", json=make_payload(20260327654321)
     )
     job_id = response.json()["id"]
     store = EnrichmentJobStore(db_session)

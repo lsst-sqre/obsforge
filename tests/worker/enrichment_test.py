@@ -24,6 +24,12 @@ def make_registration(visit: int) -> VisitRegistration:
             "instrument": "LSSTCam",
             "day_obs": 20260327,
             "visit": visit,
+            "datasets": [
+                {
+                    "dataset_type": "preliminary_visit_image",
+                    "id": "019ba0a6-0173-765f-bf27-56884ff9342a",
+                }
+            ],
             "timespan": {
                 "begin": "2026-03-27T08:15:10Z",
                 "end": "2026-03-27T08:15:45Z",
