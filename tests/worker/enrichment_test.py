@@ -1,6 +1,6 @@
 """Tests for enrichment worker functions."""
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -13,9 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.testing import capture_logs
 
 from obsforge.config import config
-from obsforge.models import VisitRegistration
+from obsforge.models import ObsCoreUpsert, VisitRegistration
 from obsforge.schema import EnrichmentJobPhase
-from obsforge.storage import EnrichmentJobStore
+from obsforge.storage import EnrichmentJobStore, ObsCoreStore
 from obsforge.worker import main as worker_main
 from obsforge.worker.functions import enrichment
 from obsforge.worker.main import WorkerSettings
@@ -41,23 +41,114 @@ def make_registration(visit: int) -> VisitRegistration:
     )
 
 
+def make_obscore_upsert(obs_id: str) -> ObsCoreUpsert:
+    return ObsCoreUpsert(
+        dataproduct_type="image",
+        dataproduct_subtype="lsst.visit_image",
+        facility_name="Rubin:Simonyi",
+        calib_level=2,
+        target_name="ddf_ecdfs, lowdust",
+        obs_id=obs_id,
+        obs_collection="LSST.Prompt",
+        obs_publisher_did=f"D{obs_id}",
+        access_url=f"https://example.com/api/datalink/links?ID=D{obs_id}",
+        access_format="application/x-votable+xml;content=datalink",
+        access_estsize=None,
+        s_resolution=None,
+        s_xel1=None,
+        s_xel2=None,
+        t_xel=None,
+        t_min=61049.11561010359,
+        t_max=61049.115968101854,
+        t_exptime=30.0,
+        t_resolution=None,
+        em_xel=None,
+        em_min=4.026e-07,
+        em_max=5.483e-07,
+        em_res_power=None,
+        em_filter_name="g",
+        o_ucd="phot.flux.density",
+        pol_xel=None,
+        instrument_name="LSSTCam",
+        lsst_visit=2026010800095,
+        lsst_detector=125,
+        lsst_tract=None,
+        lsst_patch=None,
+        lsst_band="g",
+        lsst_filter="g_6",
+        obs_title=(
+            "visit_image - g - MC_O_20260108_000095-R30_S22 "
+            "2026-01-09T02:45:51.712950Z"
+        ),
+        s_ra=54.00926387186998,
+        s_dec=-27.174727694762304,
+        s_fov=0.3572492942259721,
+        s_region=(
+            "POLYGON ICRS 53.891809 -27.319323 "
+            "54.174563 -27.276221 54.126402 -27.030061 "
+            "53.844298 -27.072994"
+        ),
+    )
+
+
 @pytest.mark.asyncio
 async def test_run_enrichment_marks_completed(
-    app: FastAPI, db_session: AsyncSession
+    app: FastAPI, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Test a successful worker job."""
+    adapter_instances: list[Any] = []
+
+    class FakeDaxObsCoreAdapter:
+        def __init__(
+            self,
+            *,
+            butler_factory: Any,
+            butler_label: str,
+            config: Any,
+            dataset_type: str,
+        ) -> None:
+            self.butler_factory = butler_factory
+            self.butler_label = butler_label
+            self.config = config
+            self.dataset_type = dataset_type
+            self.registration: VisitRegistration | None = None
+            adapter_instances.append(self)
+
+        def iter_visit_records(
+            self, registration: VisitRegistration
+        ) -> Iterator[ObsCoreUpsert]:
+            self.registration = registration
+            yield make_obscore_upsert(str(registration.datasets[0].id))
+
     store = EnrichmentJobStore(db_session)
     created = await store.add_or_get(make_registration(20260327123456))
     await store.mark_queued(created.id)
+    monkeypatch.setattr(enrichment, "DaxObsCoreAdapter", FakeDaxObsCoreAdapter)
 
     await enrichment.run_enrichment(
-        {"logger": structlog.get_logger("test")}, created.id
+        {
+            "logger": structlog.get_logger("test"),
+            "labeled_butler_factory": object(),
+            "obscore_config": object(),
+            "obscore_dataset_type": "preliminary_visit_image",
+        },
+        created.id,
     )
 
     seen = await store.get(created.id)
     assert seen.phase == EnrichmentJobPhase.COMPLETED
     assert seen.started_at is not None
     assert seen.completed_at is not None
+    assert len(adapter_instances) == 1
+    assert adapter_instances[0].butler_label == config.butler_label
+    assert adapter_instances[0].dataset_type == "preliminary_visit_image"
+    assert adapter_instances[0].registration == make_registration(
+        20260327123456
+    )
+
+    obs_id = str(created.registration_payload["datasets"][0]["id"])
+    obscore = await ObsCoreStore(db_session).get_by_obs_id(obs_id)
+    assert obscore.obs_id == obs_id
 
 
 @pytest.mark.asyncio
@@ -69,7 +160,10 @@ async def test_run_enrichment_marks_failed(
     """Test a failing worker job."""
 
     async def fail(
-        job_id: int, *, context: Mapping[str, Any] | None = None
+        job_id: int,
+        *,
+        session: AsyncSession,
+        context: Mapping[str, Any] | None = None,
     ) -> None:
         raise RuntimeError("metadata missing")
 
@@ -180,7 +274,10 @@ async def test_run_enrichment_reraises_retry_before_final_attempt(
     """Test arq Retry is preserved before retries are exhausted."""
 
     async def retry(
-        job_id: int, *, context: Mapping[str, Any] | None = None
+        job_id: int,
+        *,
+        session: AsyncSession,
+        context: Mapping[str, Any] | None = None,
     ) -> None:
         raise Retry
 
@@ -223,7 +320,10 @@ async def test_run_enrichment_marks_failed_on_final_retry(
     """Test the final arq Retry records durable failure state."""
 
     async def retry(
-        job_id: int, *, context: Mapping[str, Any] | None = None
+        job_id: int,
+        *,
+        session: AsyncSession,
+        context: Mapping[str, Any] | None = None,
     ) -> None:
         raise Retry
 
