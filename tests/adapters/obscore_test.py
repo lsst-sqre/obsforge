@@ -17,6 +17,13 @@ DATASET_ID = UUID("019ba0a6-0173-765f-bf27-56884ff9342a")
 SECOND_DATASET_ID = UUID("019ba0a5-fe48-7c7a-8c3f-540057f026c3")
 
 
+class FakeDatasetTypeConfig:
+    """Small stand-in for per-dataset ObsCore configuration."""
+
+    def __init__(self, *, obs_id_fmt: str) -> None:
+        self.obs_id_fmt = obs_id_fmt
+
+
 class FakeExporterConfig:
     """Small stand-in for `ExporterConfig` query mutation behavior."""
 
@@ -24,15 +31,33 @@ class FakeExporterConfig:
         self.copied_with_deep: bool | None = None
         self.copy: FakeExporterConfig | None = None
         self.selected_dataset_types: list[str] = []
+        self.dataset_types = {
+            "preliminary_visit_image": FakeDatasetTypeConfig(
+                obs_id_fmt="{records[visit].name}"
+            ),
+            "difference_image": FakeDatasetTypeConfig(
+                obs_id_fmt="{records[visit].name}"
+            ),
+        }
         self.dataset_type_constraints: dict[str, list[Any]] = {}
 
     def model_copy(self, *, deep: bool = False) -> FakeExporterConfig:
         self.copied_with_deep = deep
         self.copy = FakeExporterConfig()
+        self.copy.dataset_types = {
+            key: FakeDatasetTypeConfig(obs_id_fmt=value.obs_id_fmt)
+            for key, value in self.dataset_types.items()
+        }
         return self.copy
 
     def select_dataset_types(self, dataset_types: Iterable[str]) -> None:
         self.selected_dataset_types = list(dataset_types)
+        dataset_type_set = set(dataset_types)
+        self.dataset_types = {
+            key: value
+            for key, value in self.dataset_types.items()
+            if key in dataset_type_set
+        }
 
 
 class FakeButlerFactory:
@@ -178,8 +203,16 @@ def test_iter_visit_records_constrains_exporter_by_matching_dataset_ids(
     assert factory.labels == ["prompt"]
     assert config.copied_with_deep is True
     assert config.dataset_type_constraints == {}
+    assert (
+        config.dataset_types["preliminary_visit_image"].obs_id_fmt
+        == "{records[visit].name}"
+    )
     assert config.copy is not None
     assert config.copy.selected_dataset_types == ["preliminary_visit_image"]
+    assert config.copy.dataset_types["preliminary_visit_image"].obs_id_fmt == (
+        "{id}"
+    )
+    assert "difference_image" not in config.copy.dataset_types
     where_bind = config.copy.dataset_type_constraints[
         "preliminary_visit_image"
     ][0]

@@ -52,6 +52,8 @@ class DaxObsCoreAdapter:
 
         cfg = self._config.model_copy(deep=True)
         cfg.select_dataset_types([self._dataset_type])
+        # Use the globally unique Butler dataset UUID as `obs_id`.
+        cfg.dataset_types[self._dataset_type].obs_id_fmt = "{id}"
         cfg.dataset_type_constraints = {
             self._dataset_type: [
                 WhereBind(
