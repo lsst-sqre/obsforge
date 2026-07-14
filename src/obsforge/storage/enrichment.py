@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from obsforge.exceptions import (
     InvalidEnrichmentJobTransitionError,
     UnknownEnrichmentJobError,
+    UnknownEnrichmentJobVisitError,
 )
 from obsforge.models import (
     SerializedEnrichmentJob,
@@ -46,8 +47,7 @@ class EnrichmentJobStore:
         self, registration: VisitRegistration
     ) -> StoredEnrichmentJob:
         """Create a pending job or return the existing duplicate."""
-        now = datetime.now(tz=UTC).replace(microsecond=0)
-        db_now = datetime_to_db(now)
+        db_now = self._now_for_db()
         payload = registration.model_dump(mode="json")
         stmt = (
             insert(SQLEnrichmentJob)
@@ -234,7 +234,7 @@ class EnrichmentJobStore:
         )
         job = (await self._session.execute(stmt)).scalar_one_or_none()
         if not job:
-            raise UnknownEnrichmentJobError(-1)
+            raise UnknownEnrichmentJobVisitError(instrument, visit)
         return job
 
     def _serialize(self, job: SQLEnrichmentJob) -> SerializedEnrichmentJob:

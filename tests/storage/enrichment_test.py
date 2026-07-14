@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from obsforge.exceptions import (
     InvalidEnrichmentJobTransitionError,
     UnknownEnrichmentJobError,
+    UnknownEnrichmentJobVisitError,
 )
 from obsforge.models import VisitDataset, VisitRegistration, VisitTimespan
 from obsforge.schema import EnrichmentJobPhase
@@ -348,5 +349,11 @@ async def test_get_unknown_instrument_visit_raises(
 ) -> None:
     store = EnrichmentJobStore(db_session)
 
-    with pytest.raises(UnknownEnrichmentJobError):
+    with pytest.raises(
+        UnknownEnrichmentJobVisitError,
+        match="Unknown enrichment job for instrument 'LSSTCam' and visit 404",
+    ) as exc_info:
         await store.get_by_instrument_visit("LSSTCam", 404)
+
+    assert exc_info.value.instrument == "LSSTCam"
+    assert exc_info.value.visit == 404
