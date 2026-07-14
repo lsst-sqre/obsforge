@@ -105,9 +105,13 @@ async def test_register_visit(
         "instrument": "LSSTCam",
         "day_obs": 20260108,
         "phase": "QUEUED",
+        "error_code": None,
+        "error_message": None,
         "registration_payload": payload,
         "created_at": "2026-01-09T02:45:51Z",
         "updated_at": "2026-01-09T02:45:51Z",
+        "started_at": None,
+        "completed_at": None,
     }
 
 
@@ -208,6 +212,10 @@ async def test_get_job(client: AsyncClient) -> None:
     assert response.status_code == 200
     assert response.json()["id"] == job_id
     assert response.json()["phase"] == "QUEUED"
+    assert response.json()["error_code"] is None
+    assert response.json()["error_message"] is None
+    assert response.json()["started_at"] is None
+    assert response.json()["completed_at"] is None
 
 
 @pytest.mark.asyncio
@@ -216,3 +224,11 @@ async def test_get_unknown_job_returns_404(client: AsyncClient) -> None:
     response = await client.get("/obsforge/jobs/404")
 
     assert response.status_code == 404
+    assert response.json() == {
+        "detail": [
+            {
+                "msg": "Unknown enrichment job 404",
+                "type": "unknown_enrichment_job",
+            }
+        ]
+    }

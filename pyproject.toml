@@ -1,7 +1,7 @@
 [project]
 # https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
 name = "obsforge"
-description = "ObsForge: The RSP observation metadata enrichment service"
+description = "ObsForge: a metadata enrichment service for Rubin Observatory observations"
 license = "MIT"
 license-files = ["LICENSE"]
 readme = "README.md"
