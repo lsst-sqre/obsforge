@@ -1,9 +1,19 @@
 """Models for obsforge."""
 
+from datetime import datetime
+from typing import Any
+
 from pydantic import BaseModel, Field
 from safir.metadata import Metadata as SafirMetadata
 
-__all__ = ["Index"]
+from .schema import EnrichmentJobPhase
+
+__all__ = [
+    "Index",
+    "SerializedEnrichmentJob",
+    "VisitRegistration",
+    "VisitTimespan",
+]
 
 
 class Index(BaseModel):
@@ -18,3 +28,51 @@ class Index(BaseModel):
     """
 
     metadata: SafirMetadata = Field(..., title="Package metadata")
+
+
+class VisitTimespan(BaseModel):
+    """Visit time range from the registration payload."""
+
+    begin: datetime = Field(..., title="Visit start time")
+
+    end: datetime = Field(..., title="Visit end time")
+
+
+class VisitRegistration(BaseModel):
+    """Prompt Publication payload registering one visit."""
+
+    instrument: str = Field(..., title="Instrument name")
+
+    day_obs: int = Field(..., title="Visit day")
+
+    visit: int = Field(..., title="Unique visit identifier")
+
+    timespan: VisitTimespan = Field(..., title="Visit timespan")
+
+
+class SerializedEnrichmentJob(BaseModel):
+    """Serializable representation of an enrichment job."""
+
+    id: int
+
+    visit: int
+
+    instrument: str
+
+    day_obs: int
+
+    phase: EnrichmentJobPhase
+
+    error_code: str | None
+
+    error_message: str | None
+
+    registration_payload: dict[str, Any]
+
+    created_at: datetime
+
+    updated_at: datetime
+
+    started_at: datetime | None
+
+    completed_at: datetime | None

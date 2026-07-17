@@ -13,6 +13,8 @@ from importlib.metadata import metadata, version
 
 import structlog
 from fastapi import FastAPI
+from safir.database import create_database_engine, is_database_current
+from safir.dependencies.db_session import db_session_dependency
 from safir.dependencies.http_client import http_client_dependency
 from safir.logging import configure_logging, configure_uvicorn_logging
 from safir.middleware.x_forwarded import XForwardedMiddleware
@@ -29,10 +31,27 @@ __all__ = ["app"]
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Set up and tear down the application."""
     # Any code here will be run when the application starts up.
+    logger = structlog.get_logger("obsforge")
+    engine = create_database_engine(
+        config.database_url, config.database_password
+    )
+    try:
+        if not await is_database_current(engine, logger):
+            raise RuntimeError("Database schema out of date")
+    finally:
+        await engine.dispose()
+
+    await db_session_dependency.initialize(
+        config.database_url,
+        config.database_password,
+        # Keep job-state reads stable during transactional phase updates.
+        isolation_level="REPEATABLE READ",
+    )
 
     yield
 
     # Any code here will be run when the application shuts down.
+    await db_session_dependency.aclose()
     await http_client_dependency.aclose()
 
 

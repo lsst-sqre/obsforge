@@ -3,6 +3,7 @@
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from safir.logging import LogLevel, Profile
+from safir.pydantic import EnvAsyncPostgresDsn
 
 __all__ = ["Config", "config"]
 
@@ -12,6 +13,16 @@ class Config(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="OBSFORGE_", case_sensitive=False
+    )
+
+    database_url: EnvAsyncPostgresDsn = Field(
+        ...,
+        title="PostgreSQL DSN",
+        description="DSN of PostgreSQL database for ObsForge durable state",
+    )
+
+    database_password: SecretStr | None = Field(
+        None, title="Password for ObsForge database"
     )
 
     log_level: LogLevel = Field(
