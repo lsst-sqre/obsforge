@@ -120,7 +120,9 @@ class ObsCoreRecord(BaseModel):
 
     access_format: str
 
-    access_estsize: int | None
+    # This field is part of the ObsCore schema, but it is not returned by
+    # Rubin ObsCoreExporter.
+    access_estsize: int | None = None
 
     s_ra: float
 
