@@ -29,11 +29,13 @@ class DaxObsCoreAdapter:
         butler_label: str,
         config: ExporterConfig,
         dataset_type: str,
+        access_token: str,
     ) -> None:
         self._butler_factory = butler_factory
         self._butler_label = butler_label
         self._config = config
         self._dataset_type = dataset_type
+        self._access_token = access_token
 
     def iter_visit_records(
         self, registration: VisitRegistration
@@ -63,7 +65,10 @@ class DaxObsCoreAdapter:
             ]
         }
 
-        butler = self._butler_factory.create_butler(label=self._butler_label)
+        butler = self._butler_factory.create_butler(
+            label=self._butler_label,
+            access_token=self._access_token,
+        )
         exporter = ObscoreExporter(butler, cfg)
         if not hasattr(exporter, "iter_records"):
             raise RuntimeError(

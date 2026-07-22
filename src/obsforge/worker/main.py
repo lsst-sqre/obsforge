@@ -27,8 +27,17 @@ def _required_worker_setting(value: HttpUrl | Path | None, name: str) -> str:
 def _initialize_obscore_context(
     ctx: dict[Any, Any], logger: BoundLogger
 ) -> None:
+    butler_repository_setting = config.butler_repository
+    if butler_repository_setting is None:
+        raise RuntimeError(
+            "OBSFORGE_BUTLER_REPOSITORY must be set for worker enrichment"
+        )
+    if config.butler_access_token is None:
+        raise RuntimeError(
+            "OBSFORGE_BUTLER_ACCESS_TOKEN must be set for Butler enrichment"
+        )
     butler_repository = _required_worker_setting(
-        config.butler_repository, "OBSFORGE_BUTLER_REPOSITORY"
+        butler_repository_setting, "OBSFORGE_BUTLER_REPOSITORY"
     )
     obscore_config = _required_worker_setting(
         config.obscore_config, "OBSFORGE_OBSCORE_CONFIG"
@@ -40,6 +49,7 @@ def _initialize_obscore_context(
         ButlerConfig(obscore_config)
     )
     ctx["obscore_dataset_type"] = config.obscore_dataset_type
+    ctx["butler_access_token"] = config.butler_access_token
     logger.info(
         "Initialized ObsCore enrichment resources",
         butler_label=config.butler_label,
@@ -74,6 +84,7 @@ async def shutdown(ctx: dict[Any, Any]) -> None:
     ctx.pop("labeled_butler_factory", None)
     ctx.pop("obscore_config", None)
     ctx.pop("obscore_dataset_type", None)
+    ctx.pop("butler_access_token", None)
     await db_session_dependency.aclose()
     logger.info("Worker shutdown complete")
 
