@@ -139,7 +139,6 @@ def make_obscore_row() -> dict[str, Any]:
             f"%3Frepo%3Dprompt%26id%3D{DATASET_ID}"
         ),
         "access_format": "application/x-votable+xml;content=datalink",
-        "access_estsize": None,
         "s_ra": 12.34,
         "s_dec": -45.6,
         "s_fov": 0.1,
