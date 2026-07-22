@@ -35,6 +35,7 @@ class EnrichmentJob(SchemaBase):
     phase: Mapped[EnrichmentJobPhase]
     error_code: Mapped[str | None]
     error_message: Mapped[str | None]
+    arq_job_id: Mapped[str | None]
     registration_payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
     created_at: Mapped[datetime]
     updated_at: Mapped[datetime]
