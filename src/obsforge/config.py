@@ -68,6 +68,14 @@ class Config(BaseSettings):
         ),
     )
 
+    butler_access_token: SecretStr | None = Field(
+        None,
+        title="Butler access token",
+        description=(
+            "Access token used by the worker for remote Butler enrichment"
+        ),
+    )
+
     obscore_config: HttpUrl | Path | None = Field(
         None,
         title="ObsCore exporter configuration",

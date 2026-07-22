@@ -8,6 +8,7 @@ import pytest
 import structlog
 from arq.worker import Retry
 from fastapi import FastAPI
+from pydantic import SecretStr
 from safir.dependencies.db_session import db_session_dependency
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.testing import capture_logs
@@ -106,11 +107,13 @@ async def test_run_enrichment_marks_completed(
             butler_label: str,
             config: Any,
             dataset_type: str,
+            access_token: str | None = None,
         ) -> None:
             self.butler_factory = butler_factory
             self.butler_label = butler_label
             self.config = config
             self.dataset_type = dataset_type
+            self.access_token = access_token
             self.registration: VisitRegistration | None = None
             adapter_instances.append(self)
 
@@ -131,6 +134,7 @@ async def test_run_enrichment_marks_completed(
             "labeled_butler_factory": object(),
             "obscore_config": object(),
             "obscore_dataset_type": "preliminary_visit_image",
+            "butler_access_token": SecretStr("worker-token"),
         },
         created.id,
     )
@@ -142,6 +146,7 @@ async def test_run_enrichment_marks_completed(
     assert len(adapter_instances) == 1
     assert adapter_instances[0].butler_label == config.butler_label
     assert adapter_instances[0].dataset_type == "preliminary_visit_image"
+    assert adapter_instances[0].access_token == "worker-token"
     assert adapter_instances[0].registration == make_registration(
         20260327123456
     )
@@ -226,6 +231,7 @@ async def test_worker_startup_initializes_obscore_context(
 
     monkeypatch.setattr(config, "butler_label", "prompt")
     monkeypatch.setattr(config, "butler_repository", Path("/repo/prompt"))
+    monkeypatch.setattr(config, "butler_access_token", SecretStr("token"))
     monkeypatch.setattr(config, "obscore_config", Path("/configs/prompt.yaml"))
     monkeypatch.setattr(
         config,
@@ -247,6 +253,7 @@ async def test_worker_startup_initializes_obscore_context(
     assert ctx["labeled_butler_factory"].__class__ is FakeLabeledButlerFactory
     assert ctx["obscore_config"] == "exporter-config"
     assert ctx["obscore_dataset_type"] == "preliminary_visit_image"
+    assert ctx["butler_access_token"].get_secret_value() == "token"
     assert seen["repositories"] == {"prompt": "/repo/prompt"}
     assert seen["obscore_config_path"] == "/configs/prompt.yaml"
     assert seen["exporter_config_data"].__class__ is FakeButlerConfig
@@ -263,6 +270,47 @@ async def test_worker_startup_requires_butler_repository(
 
     with pytest.raises(RuntimeError, match="OBSFORGE_BUTLER_REPOSITORY"):
         await worker_main.startup({})
+
+
+@pytest.mark.asyncio
+async def test_worker_startup_requires_butler_access_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test worker startup fails clearly without a Butler token."""
+    monkeypatch.setattr(config, "butler_repository", Path("/repo/prompt"))
+    monkeypatch.setattr(config, "butler_access_token", None)
+    monkeypatch.setattr(config, "obscore_config", Path("/configs/prompt.yaml"))
+
+    with pytest.raises(RuntimeError, match="OBSFORGE_BUTLER_ACCESS_TOKEN"):
+        await worker_main.startup({})
+
+
+@pytest.mark.asyncio
+async def test_worker_shutdown_removes_obscore_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test worker shutdown clears shared ObsCore worker resources."""
+    seen: dict[str, bool] = {}
+
+    async def close_db_session() -> None:
+        seen["db_session_closed"] = True
+
+    monkeypatch.setattr(db_session_dependency, "aclose", close_db_session)
+    ctx: dict[Any, Any] = {
+        "logger": structlog.get_logger("test"),
+        "labeled_butler_factory": object(),
+        "obscore_config": object(),
+        "obscore_dataset_type": "preliminary_visit_image",
+        "butler_access_token": SecretStr("token"),
+    }
+
+    await worker_main.shutdown(ctx)
+
+    assert "labeled_butler_factory" not in ctx
+    assert "obscore_config" not in ctx
+    assert "obscore_dataset_type" not in ctx
+    assert "butler_access_token" not in ctx
+    assert seen["db_session_closed"] is True
 
 
 @pytest.mark.asyncio

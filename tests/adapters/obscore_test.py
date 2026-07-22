@@ -65,9 +65,13 @@ class FakeButlerFactory:
 
     def __init__(self) -> None:
         self.labels: list[str] = []
+        self.access_tokens: list[str | None] = []
 
-    def create_butler(self, *, label: str) -> str:
+    def create_butler(
+        self, *, label: str, access_token: str | None = None
+    ) -> str:
         self.labels.append(label)
+        self.access_tokens.append(access_token)
         return "butler"
 
 
@@ -174,13 +178,17 @@ def make_obscore_row() -> dict[str, Any]:
 
 
 def make_adapter(
-    config: FakeExporterConfig, factory: FakeButlerFactory
+    config: FakeExporterConfig,
+    factory: FakeButlerFactory,
+    *,
+    access_token: str = "worker-token",
 ) -> DaxObsCoreAdapter:
     return DaxObsCoreAdapter(
         butler_factory=cast("LabeledButlerFactory", factory),
         butler_label="prompt",
         config=cast("ExporterConfig", config),
         dataset_type="preliminary_visit_image",
+        access_token=access_token,
     )
 
 
@@ -194,12 +202,13 @@ def test_iter_visit_records_constrains_exporter_by_matching_dataset_ids(
     )
     config = FakeExporterConfig()
     factory = FakeButlerFactory()
-    adapter = make_adapter(config, factory)
+    adapter = make_adapter(config, factory, access_token="worker-token")
 
     records = list(adapter.iter_visit_records(make_registration()))
 
     assert records == [ObsCoreUpsert.model_validate(make_obscore_row())]
     assert factory.labels == ["prompt"]
+    assert factory.access_tokens == ["worker-token"]
     assert config.copied_with_deep is True
     assert config.dataset_type_constraints == {}
     assert (
@@ -241,5 +250,6 @@ def test_iter_visit_records_rejects_missing_matching_dataset_ids(
         )
 
     assert factory.labels == []
+    assert factory.access_tokens == []
     assert config.copied_with_deep is None
     assert FakeObscoreExporter.instances == []

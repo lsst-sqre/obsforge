@@ -8,6 +8,7 @@ import structlog
 from arq.worker import Retry
 from lsst.daf.butler import LabeledButlerFactory
 from lsst.dax.obscore import ExporterConfig
+from pydantic import SecretStr
 from safir.dependencies.db_session import db_session_dependency
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +45,9 @@ async def enrich_visit(
     """
     job = await EnrichmentJobStore(session).get(job_id)
     registration = VisitRegistration.model_validate(job.registration_payload)
+    butler_access_token = cast(
+        "SecretStr", _required_context_value(context, "butler_access_token")
+    )
     adapter = DaxObsCoreAdapter(
         butler_factory=cast(
             "LabeledButlerFactory",
@@ -58,6 +62,7 @@ async def enrich_visit(
             "str",
             _required_context_value(context, "obscore_dataset_type"),
         ),
+        access_token=butler_access_token.get_secret_value(),
     )
     records = await asyncio.to_thread(
         lambda: list(adapter.iter_visit_records(registration))

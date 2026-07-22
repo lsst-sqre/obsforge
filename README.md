@@ -38,6 +38,12 @@ export OBSFORGE_OBSCORE_CONFIG=/path/to/prompt.yaml
 export OBSFORGE_OBSCORE_DATASET_TYPE=preliminary_visit_image
 ```
 
+The worker uses a remote Butler and requires a service token:
+
+```sh
+export OBSFORGE_BUTLER_ACCESS_TOKEN=...
+```
+
 To enable debug-level application logs, also set:
 
 ```sh
