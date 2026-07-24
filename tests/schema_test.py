@@ -2,9 +2,21 @@
 
 from typing import cast
 
-from sqlalchemy import Table, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Float,
+    Integer,
+    Table,
+    Text,
+    UniqueConstraint,
+)
 
-from obsforge.schema import EnrichmentJob, EnrichmentJobPhase, SchemaBase
+from obsforge.schema import (
+    EnrichmentJob,
+    EnrichmentJobPhase,
+    ObsCore,
+    SchemaBase,
+)
 
 
 def test_enrichment_job_table_registered() -> None:
@@ -24,6 +36,7 @@ def test_enrichment_job_columns() -> None:
         "phase",
         "error_code",
         "error_message",
+        "arq_job_id",
         "registration_payload",
         "created_at",
         "updated_at",
@@ -34,6 +47,7 @@ def test_enrichment_job_columns() -> None:
     assert columns["visit"].type.python_type is int
     assert columns["error_code"].nullable is True
     assert columns["error_message"].nullable is True
+    assert columns["arq_job_id"].nullable is True
     assert columns["started_at"].nullable is True
     assert columns["completed_at"].nullable is True
 
@@ -61,3 +75,106 @@ def test_enrichment_job_phase_values() -> None:
         "COMPLETED",
         "ERROR",
     ]
+
+
+def test_obscore_table_registered() -> None:
+    assert SchemaBase.metadata.tables["ivoa.ObsCore"] is ObsCore.__table__
+
+
+def test_obscore_columns() -> None:
+    columns = ObsCore.__table__.columns
+
+    assert set(columns.keys()) == {
+        "dataproduct_type",
+        "dataproduct_subtype",
+        "calib_level",
+        "target_name",
+        "obs_id",
+        "obs_collection",
+        "obs_publisher_did",
+        "access_url",
+        "access_format",
+        "access_estsize",
+        "s_ra",
+        "s_dec",
+        "s_fov",
+        "s_region",
+        "s_resolution",
+        "s_xel1",
+        "s_xel2",
+        "t_xel",
+        "t_min",
+        "t_max",
+        "t_exptime",
+        "t_resolution",
+        "em_xel",
+        "em_min",
+        "em_max",
+        "em_res_power",
+        "o_ucd",
+        "pol_xel",
+        "instrument_name",
+        "facility_name",
+        "obs_title",
+        "em_filter_name",
+        "lsst_visit",
+        "lsst_detector",
+        "lsst_filter",
+        "lsst_band",
+        "lsst_patch",
+        "lsst_tract",
+    }
+    assert columns["obs_id"].primary_key is True
+    assert columns["obs_id"].nullable is False
+    assert isinstance(columns["access_url"].type, Text)
+    assert isinstance(columns["calib_level"].type, Integer)
+    assert isinstance(columns["lsst_visit"].type, BigInteger)
+    assert isinstance(columns["s_ra"].type, Float)
+
+
+def test_obscore_nullable_columns() -> None:
+    columns = ObsCore.__table__.columns
+    nullable_columns = {
+        "target_name",
+        "access_estsize",
+        "s_resolution",
+        "s_xel1",
+        "s_xel2",
+        "t_xel",
+        "t_resolution",
+        "em_xel",
+        "em_res_power",
+        "pol_xel",
+        "lsst_patch",
+        "lsst_tract",
+    }
+
+    for column_name, column in columns.items():
+        assert column.nullable is (column_name in nullable_columns)
+
+
+def test_obscore_column_info() -> None:
+    columns = ObsCore.__table__.columns
+
+    assert columns["s_ra"].info == {
+        "unit": "deg",
+        "description": "Central Spatial Position in ICRS; Right ascension",
+        "ucd": "pos.eq.ra",
+    }
+    assert columns["obs_id"].info == {
+        "unit": "",
+        "description": "Internal ID given by the ObsTAP service",
+        "ucd": "meta.id",
+    }
+    assert columns["em_filter_name"].info == {
+        "unit": "",
+        "description": (
+            "Filter name associated with the observation spectral coverage"
+        ),
+        "ucd": "meta.id;instr.filter",
+    }
+    assert columns["lsst_detector"].info == {
+        "unit": "",
+        "description": "Identifier for CCD within the LSSTCam focal plane",
+        "ucd": "meta.id;instr.det",
+    }
