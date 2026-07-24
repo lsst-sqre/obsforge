@@ -13,12 +13,12 @@ def make_obscore_upsert() -> ObsCoreUpsert:
         facility_name="Rubin:Simonyi",
         calib_level=2,
         target_name="ddf_ecdfs, lowdust",
-        obs_id="MC_O_20260108_000095",
+        obs_id="D019ba0a6-0173-765f-bf27-56884ff9342",
         obs_collection="LSST.Prompt",
-        obs_publisher_did="D019ba0a6-0173-765f-bf27-56884ff9342a",
+        obs_publisher_did="ivo://org.rubinobs/usdac/lsst-prompt?repo=prompt&id={id}",
         access_url=(
             "https://example.com/api/datalink/links?"
-            "ID=D019ba0a6-0173-765f-bf27-56884ff9342a"
+            "ID=D019ba0a6-0173-765f-bf27-56884ff9342"
         ),
         access_format="application/x-votable+xml;content=datalink",
         access_estsize=None,
