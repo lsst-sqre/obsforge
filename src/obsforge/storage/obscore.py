@@ -50,9 +50,4 @@ class ObsCoreStore:
         return obscore
 
     def _serialize(self, obscore: SQLObsCore) -> SerializedObsCore:
-        return SerializedObsCore(
-            **{
-                column.name: getattr(obscore, column.name)
-                for column in SQLObsCore.__table__.columns
-            }
-        )
+        return SerializedObsCore.model_validate(obscore, from_attributes=True)
