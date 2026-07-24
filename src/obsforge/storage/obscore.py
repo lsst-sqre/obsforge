@@ -21,7 +21,7 @@ class ObsCoreStore:
     @retry_async_transaction
     async def upsert(self, record: ObsCoreUpsert) -> SerializedObsCore:
         """Insert or update one ObsCore record by observation ID."""
-        values = record.model_dump(mode="json")
+        values = record.model_dump()
         insert_stmt = insert(SQLObsCore).values(values)
         update_values = {
             key: getattr(insert_stmt.excluded, key)
