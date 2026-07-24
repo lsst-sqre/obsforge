@@ -2,7 +2,9 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from safir.arq import ArqQueue
+from safir.dependencies.arq import arq_dependency
 from safir.dependencies.db_session import db_session_dependency
 from safir.dependencies.logger import logger_dependency
 from safir.metadata import get_metadata
@@ -13,7 +15,7 @@ from structlog.stdlib import BoundLogger
 from ..config import config
 from ..models import Index, SerializedEnrichmentJob, VisitRegistration
 from ..services import EnrichmentJobService
-from ..storage import EnrichmentJobStore
+from ..storage import EnrichmentJobStore, EnrichmentQueueStore
 
 __all__ = ["external_router"]
 
@@ -42,10 +44,7 @@ async def get_index(
     # metadata that provides the same Safir-generated metadata as the internal
     # root endpoint.
 
-    # There is no need to log simple requests since uvicorn will do this
-    # automatically, but this is included as an example of how to use the
-    # logger for more complex logging.
-    logger.info("Request for application metadata")
+    logger.debug("Request for application metadata")
 
     metadata = get_metadata(
         package_name="obsforge",
@@ -57,14 +56,58 @@ async def get_index(
 @external_router.post(
     "/register",
     response_model=SerializedEnrichmentJob,
-    response_model_exclude_none=True,
+    status_code=status.HTTP_202_ACCEPTED,
     summary="Register a visit for enrichment",
 )
 async def register_visit(
     *,
     registration: VisitRegistration,
+    response: Response,
+    arq_queue: Annotated[ArqQueue, Depends(arq_dependency)],
     session: Annotated[AsyncSession, Depends(db_session_dependency)],
+    logger: Annotated[BoundLogger, Depends(logger_dependency)],
 ) -> SerializedEnrichmentJob:
     store = EnrichmentJobStore(session)
-    service = EnrichmentJobService(store)
-    return await service.register_visit(registration)
+    queue = EnrichmentQueueStore(arq_queue, logger)
+    service = EnrichmentJobService(store, queue, logger=logger)
+    job = await service.register_visit(registration)
+    response.headers["Location"] = f"{config.path_prefix}/jobs/{job.id}"
+    return job
+
+
+@external_router.get(
+    "/jobs/{job_id}",
+    response_model=SerializedEnrichmentJob,
+    summary="Get an enrichment job",
+)
+async def get_job(
+    *,
+    job_id: int,
+    arq_queue: Annotated[ArqQueue, Depends(arq_dependency)],
+    session: Annotated[AsyncSession, Depends(db_session_dependency)],
+    logger: Annotated[BoundLogger, Depends(logger_dependency)],
+) -> SerializedEnrichmentJob:
+    store = EnrichmentJobStore(session)
+    queue = EnrichmentQueueStore(arq_queue, logger)
+    service = EnrichmentJobService(store, queue, logger=logger)
+    return await service.get(job_id)
+
+
+@external_router.delete(
+    "/jobs/{job_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Abort an enrichment job",
+)
+async def delete_job(
+    *,
+    job_id: int,
+    arq_queue: Annotated[ArqQueue, Depends(arq_dependency)],
+    session: Annotated[AsyncSession, Depends(db_session_dependency)],
+    logger: Annotated[BoundLogger, Depends(logger_dependency)],
+) -> None:
+    store = EnrichmentJobStore(session)
+    queue = EnrichmentQueueStore(arq_queue, logger)
+    service = EnrichmentJobService(store, queue, logger=logger)
+    aborted = await service.abort(job_id)
+    if not aborted:
+        raise HTTPException(status_code=404, detail="Queued job not found")

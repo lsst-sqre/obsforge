@@ -16,8 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from obsforge.exceptions import (
     InvalidEnrichmentJobTransitionError,
     UnknownEnrichmentJobError,
+    UnknownEnrichmentJobVisitError,
 )
-from obsforge.models import SerializedEnrichmentJob, VisitRegistration
+from obsforge.models import (
+    SerializedEnrichmentJob,
+    StoredEnrichmentJob,
+    VisitRegistration,
+)
 from obsforge.schema import EnrichmentJob as SQLEnrichmentJob
 from obsforge.schema import EnrichmentJobPhase
 
@@ -35,8 +40,14 @@ class EnrichmentJobStore:
         self, registration: VisitRegistration
     ) -> SerializedEnrichmentJob:
         """Create a pending job or return the existing duplicate."""
-        now = datetime.now(tz=UTC).replace(microsecond=0)
-        db_now = datetime_to_db(now)
+        return self._to_public(await self.add_or_get_internal(registration))
+
+    @retry_async_transaction
+    async def add_or_get_internal(
+        self, registration: VisitRegistration
+    ) -> StoredEnrichmentJob:
+        """Create a pending job or return the existing duplicate."""
+        db_now = self._now_for_db()
         payload = registration.model_dump(mode="json")
         stmt = (
             insert(SQLEnrichmentJob)
@@ -66,15 +77,21 @@ class EnrichmentJobStore:
                     job.phase = EnrichmentJobPhase.QUEUED
                     job.error_code = None
                     job.error_message = None
+                    job.arq_job_id = None
                     job.started_at = None
                     job.completed_at = None
                     job.updated_at = db_now
-            return self._serialize(job)
+            return self._serialize_internal(job)
 
     async def get(self, job_id: int) -> SerializedEnrichmentJob:
         """Retrieve an enrichment job by ID."""
         async with self._session.begin():
             return self._serialize(await self._get_by_id(job_id))
+
+    async def get_internal(self, job_id: int) -> StoredEnrichmentJob:
+        """Retrieve an enrichment job by ID, including queue state."""
+        async with self._session.begin():
+            return self._serialize_internal(await self._get_by_id(job_id))
 
     async def get_by_instrument_visit(
         self, instrument: str, visit: int
@@ -83,6 +100,31 @@ class EnrichmentJobStore:
         async with self._session.begin():
             job = await self._get_by_instrument_visit(instrument, visit)
             return self._serialize(job)
+
+    @retry_async_transaction
+    async def set_arq_job_id_and_mark_queued(
+        self, job_id: int, arq_job_id: str
+    ) -> SerializedEnrichmentJob:
+        """Record the arq job ID and mark the durable job as queued."""
+        async with self._session.begin():
+            return await self._transition(
+                job_id,
+                requested=EnrichmentJobPhase.QUEUED,
+                allowed_current=(
+                    EnrichmentJobPhase.PENDING,
+                    EnrichmentJobPhase.QUEUED,
+                ),
+                idempotent_current=(
+                    EnrichmentJobPhase.EXECUTING,
+                    EnrichmentJobPhase.COMPLETED,
+                    EnrichmentJobPhase.ERROR,
+                ),
+                values={
+                    "phase": EnrichmentJobPhase.QUEUED,
+                    "arq_job_id": arq_job_id,
+                    "updated_at": self._now_for_db(),
+                },
+            )
 
     @retry_async_transaction
     async def mark_queued(self, job_id: int) -> SerializedEnrichmentJob:
@@ -192,13 +234,18 @@ class EnrichmentJobStore:
         )
         job = (await self._session.execute(stmt)).scalar_one_or_none()
         if not job:
-            raise UnknownEnrichmentJobError(-1)
+            raise UnknownEnrichmentJobVisitError(instrument, visit)
         return job
 
     def _serialize(self, job: SQLEnrichmentJob) -> SerializedEnrichmentJob:
+        return self._to_public(self._serialize_internal(job))
+
+    def _serialize_internal(
+        self, job: SQLEnrichmentJob
+    ) -> StoredEnrichmentJob:
         created_at = datetime_from_db(job.created_at)
         updated_at = datetime_from_db(job.updated_at)
-        return SerializedEnrichmentJob(
+        return StoredEnrichmentJob(
             id=job.id,
             visit=job.visit,
             instrument=job.instrument,
@@ -206,11 +253,17 @@ class EnrichmentJobStore:
             phase=job.phase,
             error_code=job.error_code,
             error_message=job.error_message,
+            arq_job_id=job.arq_job_id,
             registration_payload=job.registration_payload,
             created_at=created_at,
             updated_at=updated_at,
             started_at=datetime_from_db(job.started_at),
             completed_at=datetime_from_db(job.completed_at),
+        )
+
+    def _to_public(self, job: StoredEnrichmentJob) -> SerializedEnrichmentJob:
+        return SerializedEnrichmentJob.model_validate(
+            job.model_dump(exclude={"arq_job_id"})
         )
 
     async def _transition(

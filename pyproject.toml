@@ -1,7 +1,7 @@
 [project]
 # https://packaging.python.org/en/latest/specifications/declaring-project-metadata/
 name = "obsforge"
-description = "ObsForge: The RSP observation metadata enrichment service"
+description = "ObsForge: a metadata enrichment service for Rubin Observatory observations"
 license = "MIT"
 license-files = ["LICENSE"]
 readme = "README.md"
@@ -21,10 +21,13 @@ requires-python = ">=3.14"
 dependencies = [
     "alembic[tz]>=1.16",
     "fastapi>=0.100",
+    "lsst-daf-butler[remote]>=29",
+    "lsst-dax-obscore",
     "pydantic>2",
     "pydantic-settings>=2",
-    "safir[db]>=15",
+    "safir[arq,db]>=15",
     "sqlalchemy[asyncio]>=2",
+    "structlog",
     "uvicorn[standard]>=0.34",
 ]
 dynamic = ["version"]
