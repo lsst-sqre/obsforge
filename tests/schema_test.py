@@ -7,12 +7,14 @@ from typing import cast
 import pytest
 from safir.database import create_database_engine, drop_database
 from sqlalchemy import (
+    DDL,
     BigInteger,
     Float,
     Integer,
     Table,
     Text,
     UniqueConstraint,
+    create_mock_engine,
     text,
 )
 
@@ -113,6 +115,25 @@ def test_enrichment_job_phase_values() -> None:
 
 def test_obscore_table_registered() -> None:
     assert SchemaBase.metadata.tables["ivoa.ObsCore"] is ObsCore.__table__
+
+
+def test_obscore_schema_create_ddl_registered() -> None:
+    # ObsCore owns the ivoa schema setup, so importing it should register the
+    # metadata hook that creates the schema before tables are created.
+    statements: list[str] = []
+
+    def record(sql: object, *_args: object, **_kwargs: object) -> None:
+        if isinstance(sql, DDL):
+            statements.append(str(sql))
+
+    engine = create_mock_engine(
+        "postgresql+psycopg://",
+        record,
+    )
+
+    SchemaBase.metadata.create_all(engine)
+
+    assert statements[0] == "CREATE SCHEMA IF NOT EXISTS ivoa"
 
 
 def test_obscore_columns() -> None:

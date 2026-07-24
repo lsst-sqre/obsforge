@@ -1,11 +1,18 @@
 """SQLAlchemy schema for the ObsCore table."""
 
-from sqlalchemy import BigInteger, Float, Integer
+from sqlalchemy import DDL, BigInteger, Float, Integer, event
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import SchemaBase
 
 __all__ = ["ObsCore"]
+
+
+event.listen(
+    SchemaBase.metadata,
+    "before_create",
+    DDL("CREATE SCHEMA IF NOT EXISTS ivoa"),
+)
 
 
 def _info(unit: str, description: str, ucd: str) -> dict[str, str]:
