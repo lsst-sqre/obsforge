@@ -7,11 +7,13 @@ from .base import SchemaBase
 
 __all__ = ["ObsCore"]
 
+_IVOA_SCHEMA = "ivoa"
+
 
 event.listen(
     SchemaBase.metadata,
     "before_create",
-    DDL("CREATE SCHEMA IF NOT EXISTS ivoa"),
+    DDL(f"CREATE SCHEMA IF NOT EXISTS {_IVOA_SCHEMA}"),
 )
 
 
@@ -23,7 +25,7 @@ class ObsCore(SchemaBase):
     """ObsCore observation metadata enriched by ObsForge."""
 
     __tablename__ = "ObsCore"
-    __table_args__ = {"schema": "ivoa"}  # noqa: RUF012
+    __table_args__ = ({"schema": _IVOA_SCHEMA},)
 
     dataproduct_type: Mapped[str] = mapped_column(
         nullable=False,
