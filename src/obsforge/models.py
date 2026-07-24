@@ -11,6 +11,7 @@ from .schema import EnrichmentJobPhase
 
 __all__ = [
     "Index",
+    "ObsCoreRecord",
     "ObsCoreUpsert",
     "SerializedEnrichmentJob",
     "SerializedObsCore",
