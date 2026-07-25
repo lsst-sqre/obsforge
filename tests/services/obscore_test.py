@@ -1,5 +1,7 @@
 """Tests for ObsCore business logic."""
 
+from collections.abc import Sequence
+
 import pytest
 
 from obsforge.models import ObsCoreUpsert, SerializedObsCore
@@ -72,6 +74,12 @@ class FakeObsCoreStore:
         self.calls.append("upsert")
         return self.obscore
 
+    async def upsert_many(
+        self, records: Sequence[ObsCoreUpsert]
+    ) -> list[SerializedObsCore]:
+        self.calls.append("upsert_many")
+        return [self.obscore] * len(records)
+
     async def get_by_obs_id(self, obs_id: str) -> SerializedObsCore:
         self.calls.append("get_by_obs_id")
         return self.obscore
@@ -86,6 +94,19 @@ async def test_upsert_delegates_to_store() -> None:
 
     assert obscore == store.obscore
     assert store.calls == ["upsert"]
+
+
+@pytest.mark.asyncio
+async def test_upsert_many_delegates_to_store() -> None:
+    store = FakeObsCoreStore()
+    service = ObsCoreService(store)
+
+    obscore = await service.upsert_many(
+        [make_obscore_upsert(), make_obscore_upsert()]
+    )
+
+    assert obscore == [store.obscore, store.obscore]
+    assert store.calls == ["upsert_many"]
 
 
 @pytest.mark.asyncio

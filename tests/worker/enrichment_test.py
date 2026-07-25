@@ -1,6 +1,6 @@
 """Tests for enrichment worker functions."""
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +16,7 @@ from structlog.testing import capture_logs
 from obsforge.config import config
 from obsforge.models import ObsCoreUpsert, VisitRegistration
 from obsforge.schema import EnrichmentJobPhase
+from obsforge.services import ObsCoreService
 from obsforge.storage import EnrichmentJobStore, ObsCoreStore
 from obsforge.worker import main as worker_main
 from obsforge.worker.functions import enrichment
@@ -42,7 +43,9 @@ def make_registration(visit: int) -> VisitRegistration:
     )
 
 
-def make_obscore_upsert(obs_id: str) -> ObsCoreUpsert:
+def make_obscore_upsert(
+    obs_id: str, *, lsst_detector: int = 125
+) -> ObsCoreUpsert:
     return ObsCoreUpsert(
         dataproduct_type="image",
         dataproduct_subtype="lsst.visit_image",
@@ -72,7 +75,7 @@ def make_obscore_upsert(obs_id: str) -> ObsCoreUpsert:
         pol_xel=None,
         instrument_name="LSSTCam",
         lsst_visit=2026010800095,
-        lsst_detector=125,
+        lsst_detector=lsst_detector,
         lsst_tract=None,
         lsst_patch=None,
         lsst_band="g",
@@ -98,6 +101,8 @@ async def test_run_enrichment_marks_completed(
 ) -> None:
     """Test a successful worker job."""
     adapter_instances: list[Any] = []
+    batch_calls: list[list[str]] = []
+    real_obscore_service = ObsCoreService
 
     class FakeDaxObsCoreAdapter:
         def __init__(
@@ -121,12 +126,29 @@ async def test_run_enrichment_marks_completed(
             self, registration: VisitRegistration
         ) -> Iterator[ObsCoreUpsert]:
             self.registration = registration
-            yield make_obscore_upsert(str(registration.datasets[0].id))
+            dataset_id = str(registration.datasets[0].id)
+            yield make_obscore_upsert(f"{dataset_id}-125", lsst_detector=125)
+            yield make_obscore_upsert(f"{dataset_id}-126", lsst_detector=126)
+
+    class SpyObsCoreService:
+        def __init__(self, store: Any) -> None:
+            self._delegate = real_obscore_service(store)
+
+        async def upsert(self, record: ObsCoreUpsert) -> Any:
+            raise AssertionError("worker should use upsert_many")
+
+        async def upsert_many(
+            self, records: Sequence[ObsCoreUpsert]
+        ) -> list[Any]:
+            records = list(records)
+            batch_calls.append([record.obs_id for record in records])
+            return await self._delegate.upsert_many(records)
 
     store = EnrichmentJobStore(db_session)
     created = await store.add_or_get(make_registration(20260327123456))
     await store.mark_queued(created.id)
     monkeypatch.setattr(enrichment, "DaxObsCoreAdapter", FakeDaxObsCoreAdapter)
+    monkeypatch.setattr(enrichment, "ObsCoreService", SpyObsCoreService)
 
     await enrichment.run_enrichment(
         {
@@ -151,9 +173,16 @@ async def test_run_enrichment_marks_completed(
         20260327123456
     )
 
-    obs_id = str(created.registration_payload["datasets"][0]["id"])
-    obscore = await ObsCoreStore(db_session).get_by_obs_id(obs_id)
-    assert obscore.obs_id == obs_id
+    dataset_id = str(created.registration_payload["datasets"][0]["id"])
+    obs_ids = [f"{dataset_id}-125", f"{dataset_id}-126"]
+    assert batch_calls == [obs_ids]
+    obscore_store = ObsCoreStore(db_session)
+    first = await obscore_store.get_by_obs_id(obs_ids[0])
+    second = await obscore_store.get_by_obs_id(obs_ids[1])
+    assert first.obs_id == obs_ids[0]
+    assert first.lsst_detector == 125
+    assert second.obs_id == obs_ids[1]
+    assert second.lsst_detector == 126
 
 
 @pytest.mark.asyncio

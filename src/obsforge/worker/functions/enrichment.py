@@ -68,8 +68,7 @@ async def enrich_visit(
         lambda: list(adapter.iter_visit_records(registration))
     )
     obscore_service = ObsCoreService(ObsCoreStore(session))
-    for record in records:
-        await obscore_service.upsert(record)
+    await obscore_service.upsert_many(records)
 
 
 async def run_enrichment(ctx: dict[Any, Any], job_id: int) -> None:

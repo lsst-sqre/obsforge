@@ -1,5 +1,6 @@
 """Business logic for ObsCore records."""
 
+from collections.abc import Sequence
 from typing import Protocol
 
 from obsforge.models import ObsCoreUpsert, SerializedObsCore
@@ -11,6 +12,10 @@ class ObsCoreStoreProtocol(Protocol):
     """Storage operations required by `ObsCoreService`."""
 
     async def upsert(self, record: ObsCoreUpsert) -> SerializedObsCore: ...
+
+    async def upsert_many(
+        self, records: Sequence[ObsCoreUpsert]
+    ) -> list[SerializedObsCore]: ...
 
     async def get_by_obs_id(self, obs_id: str) -> SerializedObsCore: ...
 
@@ -24,6 +29,12 @@ class ObsCoreService:
     async def upsert(self, record: ObsCoreUpsert) -> SerializedObsCore:
         """Insert or update one ObsCore record."""
         return await self._store.upsert(record)
+
+    async def upsert_many(
+        self, records: Sequence[ObsCoreUpsert]
+    ) -> list[SerializedObsCore]:
+        """Insert or update multiple ObsCore records."""
+        return await self._store.upsert_many(records)
 
     async def get_by_obs_id(self, obs_id: str) -> SerializedObsCore:
         """Retrieve an ObsCore record by observation ID."""
