@@ -27,6 +27,12 @@ export OBSFORGE_ARQ_QUEUE_URL=redis://localhost:6379/0
 export OBSFORGE_ALEMBIC_CONFIG_PATH=./alembic.ini
 ```
 
+To enable debug-level application logs, also set:
+
+```sh
+export OBSFORGE_LOG_LEVEL=DEBUG
+```
+
 Initialize the database and start the development server:
 
 ```sh
@@ -39,6 +45,58 @@ the same environment:
 
 ```sh
 uv run arq obsforge.worker.main.WorkerSettings
+```
+
+Exercise the local API from another shell:
+
+```sh
+BASE=http://127.0.0.1:8000/obsforge
+
+curl -sS "$BASE/" | jq .
+
+PAYLOAD='{
+  "instrument": "LSSTCam",
+  "day_obs": 20260327,
+  "visit": "20260327123456",
+  "timespan": {
+    "begin": "2026-03-27T08:15:10Z",
+    "end": "2026-03-27T08:15:45Z"
+  }
+}'
+
+RESPONSE=$(
+  curl -sS \
+    -H "Content-Type: application/json" \
+    -d "$PAYLOAD" \
+    "$BASE/register"
+)
+
+echo "$RESPONSE" | jq .
+
+JOB_ID=$(echo "$RESPONSE" | jq -r '.id')
+
+curl -sS "$BASE/jobs/$JOB_ID" | jq .
+```
+
+Registering the same `instrument` and `visit` pair again is idempotent:
+
+```sh
+curl -sS \
+  -H "Content-Type: application/json" \
+  -d "$PAYLOAD" \
+  "$BASE/register" | jq .
+```
+
+To abort an enrichment job:
+
+```sh
+curl -i -sS -X DELETE "$BASE/jobs/$JOB_ID"
+```
+
+The abort command must run while the queued arq job still exists, otherwise it returns:
+
+```sh
+{"detail":"Queued job not found"}
 ```
 
 Stop the services when done:

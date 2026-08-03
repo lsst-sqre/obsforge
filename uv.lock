@@ -767,6 +767,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "safir", extra = ["arq", "db"] },
     { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "structlog" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -803,6 +804,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2" },
     { name = "safir", extras = ["arq", "db"], specifier = ">=15" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2" },
+    { name = "structlog" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
 ]
 

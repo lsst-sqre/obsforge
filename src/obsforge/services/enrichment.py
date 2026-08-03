@@ -2,6 +2,9 @@
 
 from typing import Protocol
 
+import structlog
+from structlog.stdlib import BoundLogger
+
 from obsforge.models import (
     SerializedEnrichmentJob,
     StoredEnrichmentJob,
@@ -61,9 +64,11 @@ class EnrichmentJobService:
         self,
         store: EnrichmentJobStoreProtocol,
         queue: EnrichmentQueueStoreProtocol | None = None,
+        logger: BoundLogger | None = None,
     ) -> None:
         self._store = store
         self._queue = queue
+        self._logger = logger or structlog.get_logger("obsforge")
 
     async def register_visit(
         self, registration: VisitRegistration
@@ -74,14 +79,23 @@ class EnrichmentJobService:
         the existing job for the visit.
         """
         if self._queue is None:
-            return await self._store.add_or_get(registration)
+            job = await self._store.add_or_get(registration)
+            self._logger_for_job(job).info("Registered enrichment job")
+            return job
 
         job = await self._store.add_or_get_internal(registration)
         if self._should_enqueue(job):
+            self._logger_for_job(job).info("Registered enrichment job")
             arq_job_id = await self._queue.enqueue(job.id)
-            return await self._store.set_arq_job_id_and_mark_queued(
+            queued = await self._store.set_arq_job_id_and_mark_queued(
                 job.id, arq_job_id
             )
+            self._logger_for_job(queued).info("Queued enrichment job")
+            return queued
+        self._logger_for_job(job).debug(
+            "Enrichment job already registered",
+            arq_job_id=job.arq_job_id,
+        )
         return self._public(job)
 
     async def get(self, job_id: int) -> SerializedEnrichmentJob:
@@ -95,6 +109,12 @@ class EnrichmentJobService:
 
         status = await self._queue.status(job.arq_job_id)
         if status == "in_progress" and job.phase == EnrichmentJobPhase.QUEUED:
+            self._logger_for_job(job).debug(
+                "Overlaying enrichment job queue status",
+                arq_job_id=job.arq_job_id,
+                arq_status=status,
+                overlay_phase=EnrichmentJobPhase.EXECUTING.value,
+            )
             return self._public(
                 job.model_copy(update={"phase": EnrichmentJobPhase.EXECUTING})
             )
@@ -105,6 +125,13 @@ class EnrichmentJobService:
         ):
             success = await self._queue.succeeded(job.arq_job_id)
             if success is False:
+                self._logger_for_job(job).debug(
+                    "Overlaying enrichment job queue status",
+                    arq_job_id=job.arq_job_id,
+                    arq_status=status,
+                    arq_success=success,
+                    overlay_phase=EnrichmentJobPhase.ERROR.value,
+                )
                 return self._public(
                     job.model_copy(
                         update={
@@ -115,6 +142,13 @@ class EnrichmentJobService:
                     )
                 )
             if success is True:
+                self._logger_for_job(job).debug(
+                    "Overlaying enrichment job queue status",
+                    arq_job_id=job.arq_job_id,
+                    arq_status=status,
+                    arq_success=success,
+                    overlay_phase=EnrichmentJobPhase.COMPLETED.value,
+                )
                 return self._public(
                     job.model_copy(
                         update={"phase": EnrichmentJobPhase.COMPLETED}
@@ -130,8 +164,13 @@ class EnrichmentJobService:
         job = await self._store.get_internal(job_id)
         if not job.arq_job_id or not await self._queue.abort(job.arq_job_id):
             return False
-        await self._store.mark_failed(
+        failed = await self._store.mark_failed(
             job_id,
+            error_code="JobAborted",
+            error_message="Enrichment job aborted",
+        )
+        self._logger_for_job(failed).info(
+            "Aborted enrichment job",
             error_code="JobAborted",
             error_message="Enrichment job aborted",
         )
@@ -139,23 +178,35 @@ class EnrichmentJobService:
 
     async def mark_queued(self, job_id: int) -> SerializedEnrichmentJob:
         """Mark a registered job as queued without regressing active jobs."""
-        return await self._store.mark_queued(job_id)
+        job = await self._store.mark_queued(job_id)
+        self._logger_for_job(job).info("Marked enrichment job queued")
+        return job
 
     async def mark_executing(self, job_id: int) -> SerializedEnrichmentJob:
         """Mark a queued job as executing."""
-        return await self._store.mark_executing(job_id)
+        job = await self._store.mark_executing(job_id)
+        self._logger_for_job(job).info("Marked enrichment job executing")
+        return job
 
     async def mark_completed(self, job_id: int) -> SerializedEnrichmentJob:
         """Mark an executing job as completed."""
-        return await self._store.mark_completed(job_id)
+        job = await self._store.mark_completed(job_id)
+        self._logger_for_job(job).info("Completed enrichment job")
+        return job
 
     async def mark_failed(
         self, job_id: int, *, error_code: str, error_message: str
     ) -> SerializedEnrichmentJob:
         """Record a failed enrichment attempt."""
-        return await self._store.mark_failed(
+        job = await self._store.mark_failed(
             job_id, error_code=error_code, error_message=error_message
         )
+        self._logger_for_job(job).info(
+            "Failed enrichment job",
+            error_code=error_code,
+            error_message=error_message,
+        )
+        return job
 
     def _should_enqueue(self, job: StoredEnrichmentJob) -> bool:
         return (
@@ -170,4 +221,15 @@ class EnrichmentJobService:
     def _public(self, job: StoredEnrichmentJob) -> SerializedEnrichmentJob:
         return SerializedEnrichmentJob.model_validate(
             job.model_dump(exclude={"arq_job_id"})
+        )
+
+    def _logger_for_job(
+        self, job: SerializedEnrichmentJob | StoredEnrichmentJob
+    ) -> BoundLogger:
+        return self._logger.bind(
+            enrichment_job_id=job.id,
+            visit=job.visit,
+            instrument=job.instrument,
+            day_obs=job.day_obs,
+            phase=job.phase.value,
         )

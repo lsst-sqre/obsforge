@@ -45,10 +45,7 @@ async def get_index(
     # metadata that provides the same Safir-generated metadata as the internal
     # root endpoint.
 
-    # There is no need to log simple requests since uvicorn will do this
-    # automatically, but this is included as an example of how to use the
-    # logger for more complex logging.
-    logger.info("Request for application metadata")
+    logger.debug("Request for application metadata")
 
     metadata = get_metadata(
         package_name="obsforge",
@@ -70,10 +67,11 @@ async def register_visit(
     response: Response,
     arq_queue: Annotated[ArqQueue, Depends(arq_dependency)],
     session: Annotated[AsyncSession, Depends(db_session_dependency)],
+    logger: Annotated[BoundLogger, Depends(logger_dependency)],
 ) -> SerializedEnrichmentJob:
     store = EnrichmentJobStore(session)
-    queue = EnrichmentQueueStore(arq_queue)
-    service = EnrichmentJobService(store, queue)
+    queue = EnrichmentQueueStore(arq_queue, logger)
+    service = EnrichmentJobService(store, queue, logger=logger)
     job = await service.register_visit(registration)
     response.headers["Location"] = f"{config.path_prefix}/jobs/{job.id}"
     return job
@@ -90,10 +88,11 @@ async def get_job(
     job_id: int,
     arq_queue: Annotated[ArqQueue, Depends(arq_dependency)],
     session: Annotated[AsyncSession, Depends(db_session_dependency)],
+    logger: Annotated[BoundLogger, Depends(logger_dependency)],
 ) -> SerializedEnrichmentJob:
     store = EnrichmentJobStore(session)
-    queue = EnrichmentQueueStore(arq_queue)
-    service = EnrichmentJobService(store, queue)
+    queue = EnrichmentQueueStore(arq_queue, logger)
+    service = EnrichmentJobService(store, queue, logger=logger)
     try:
         return await service.get(job_id)
     except UnknownEnrichmentJobError as e:
@@ -110,10 +109,11 @@ async def delete_job(
     job_id: int,
     arq_queue: Annotated[ArqQueue, Depends(arq_dependency)],
     session: Annotated[AsyncSession, Depends(db_session_dependency)],
+    logger: Annotated[BoundLogger, Depends(logger_dependency)],
 ) -> None:
     store = EnrichmentJobStore(session)
-    queue = EnrichmentQueueStore(arq_queue)
-    service = EnrichmentJobService(store, queue)
+    queue = EnrichmentQueueStore(arq_queue, logger)
+    service = EnrichmentJobService(store, queue, logger=logger)
     try:
         aborted = await service.abort(job_id)
     except UnknownEnrichmentJobError as e:
