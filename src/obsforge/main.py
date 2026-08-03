@@ -14,6 +14,7 @@ from importlib.metadata import metadata, version
 import structlog
 from fastapi import FastAPI
 from safir.database import create_database_engine, is_database_current
+from safir.dependencies.arq import arq_dependency
 from safir.dependencies.db_session import db_session_dependency
 from safir.dependencies.http_client import http_client_dependency
 from safir.logging import configure_logging, configure_uvicorn_logging
@@ -47,10 +48,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         # Keep job-state reads stable during transactional phase updates.
         isolation_level="REPEATABLE READ",
     )
+    await arq_dependency.initialize(
+        mode=config.arq_mode, redis_settings=config.arq_redis_settings
+    )
 
     yield
 
     # Any code here will be run when the application shuts down.
+    await arq_dependency.aclose()
     await db_session_dependency.aclose()
     await http_client_dependency.aclose()
 

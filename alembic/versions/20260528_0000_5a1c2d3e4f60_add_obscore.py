@@ -1,8 +1,8 @@
 """Add ObsCore schema.
 
-Revision ID: a7f4d8e2c9b1
+Revision ID: 5a1c2d3e4f60
 Revises: 4f8a2b6c9d10
-Create Date: 2026-06-12 00:00:00.000000+00:00
+Create Date: 2026-05-28 00:00:00.000000+00:00
 
 """
 
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "a7f4d8e2c9b1"
+revision: str = "5a1c2d3e4f60"
 down_revision: str | None = "4f8a2b6c9d10"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
