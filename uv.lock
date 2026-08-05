@@ -1102,7 +1102,7 @@ requires-dist = [
     { name = "alembic", extras = ["tz"], specifier = ">=1.16" },
     { name = "fastapi", specifier = ">=0.100" },
     { name = "lsst-daf-butler", extras = ["remote"], specifier = ">=29" },
-    { name = "lsst-dax-obscore" },
+    { name = "lsst-dax-obscore", specifier = ">=30.2026.2900" },
     { name = "pydantic", specifier = ">2" },
     { name = "pydantic-settings", specifier = ">=2" },
     { name = "safir", extras = ["arq", "db"], specifier = ">=15" },

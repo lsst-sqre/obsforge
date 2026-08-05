@@ -22,7 +22,7 @@ dependencies = [
     "alembic[tz]>=1.16",
     "fastapi>=0.100",
     "lsst-daf-butler[remote]>=29",
-    "lsst-dax-obscore",
+    "lsst-dax-obscore>=30.2026.2900",
     "pydantic>2",
     "pydantic-settings>=2",
     "safir[arq,db]>=15",

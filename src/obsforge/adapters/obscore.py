@@ -70,10 +70,6 @@ class DaxObsCoreAdapter:
             access_token=self._access_token,
         )
         exporter = ObscoreExporter(butler, cfg)
-        if not hasattr(exporter, "iter_records"):
-            raise RuntimeError(
-                "lsst.dax.obscore ObscoreExporter.iter_records is required"
-            )
         record_exporter = cast("_RecordExporter", exporter)
         for record in record_exporter.iter_records():
             yield ObsCoreUpsert.model_validate(record)
