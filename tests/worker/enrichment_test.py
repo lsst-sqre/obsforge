@@ -8,7 +8,7 @@ import pytest
 import structlog
 from arq.worker import Retry
 from fastapi import FastAPI
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 from safir.dependencies.db_session import db_session_dependency
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.testing import capture_logs
@@ -290,28 +290,25 @@ async def test_worker_startup_initializes_obscore_context(
 
 
 @pytest.mark.asyncio
-async def test_worker_startup_requires_butler_repository(
+async def test_worker_startup_requires_obscore_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Test worker startup fails clearly without a Butler repository."""
+    """Test worker startup reports all missing ObsCore settings."""
     monkeypatch.setattr(config, "butler_repository", None)
-    monkeypatch.setattr(config, "obscore_config", Path("/configs/prompt.yaml"))
-
-    with pytest.raises(RuntimeError, match="OBSFORGE_BUTLER_REPOSITORY"):
-        await worker_main.startup({})
-
-
-@pytest.mark.asyncio
-async def test_worker_startup_requires_butler_access_token(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Test worker startup fails clearly without a Butler token."""
-    monkeypatch.setattr(config, "butler_repository", Path("/repo/prompt"))
     monkeypatch.setattr(config, "butler_access_token", None)
-    monkeypatch.setattr(config, "obscore_config", Path("/configs/prompt.yaml"))
+    monkeypatch.setattr(config, "obscore_config", None)
 
-    with pytest.raises(RuntimeError, match="OBSFORGE_BUTLER_ACCESS_TOKEN"):
+    with pytest.raises(ValidationError) as exc_info:
         await worker_main.startup({})
+
+    error_fields = {
+        error["loc"][0] for error in exc_info.value.errors(include_url=False)
+    }
+    assert error_fields == {
+        "butler_repository",
+        "butler_access_token",
+        "obscore_config",
+    }
 
 
 @pytest.mark.asyncio

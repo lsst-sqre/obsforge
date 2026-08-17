@@ -7,7 +7,7 @@ from typing import Any, ClassVar
 import structlog
 from lsst.daf.butler import ButlerConfig, LabeledButlerFactory
 from lsst.dax.obscore import ExporterConfig
-from pydantic import HttpUrl
+from pydantic import BaseModel, HttpUrl, SecretStr
 from safir.dependencies.db_session import db_session_dependency
 from safir.logging import configure_logging
 from structlog.stdlib import BoundLogger
@@ -18,38 +18,28 @@ from obsforge.worker.functions import run_enrichment
 __all__ = ["WorkerSettings", "shutdown", "startup"]
 
 
-def _required_worker_setting(value: HttpUrl | Path | None, name: str) -> str:
-    if value is None:
-        raise RuntimeError(f"{name} must be set for worker enrichment")
-    return str(value)
+class _WorkerObsCoreSettings(BaseModel):
+    """Required settings for worker ObsCore enrichment."""
+
+    butler_repository: HttpUrl | Path
+    butler_access_token: SecretStr
+    obscore_config: HttpUrl | Path
 
 
 def _initialize_obscore_context(
     ctx: dict[Any, Any], logger: BoundLogger
 ) -> None:
-    butler_repository_setting = config.butler_repository
-    if butler_repository_setting is None:
-        raise RuntimeError(
-            "OBSFORGE_BUTLER_REPOSITORY must be set for worker enrichment"
-        )
-    if config.butler_access_token is None:
-        raise RuntimeError(
-            "OBSFORGE_BUTLER_ACCESS_TOKEN must be set for Butler enrichment"
-        )
-    butler_repository = _required_worker_setting(
-        butler_repository_setting, "OBSFORGE_BUTLER_REPOSITORY"
-    )
-    obscore_config = _required_worker_setting(
-        config.obscore_config, "OBSFORGE_OBSCORE_CONFIG"
+    settings = _WorkerObsCoreSettings.model_validate(
+        config, from_attributes=True
     )
     ctx["labeled_butler_factory"] = LabeledButlerFactory(
-        repositories={config.butler_label: butler_repository}
+        repositories={config.butler_label: str(settings.butler_repository)}
     )
     ctx["obscore_config"] = ExporterConfig.model_validate(
-        ButlerConfig(obscore_config)
+        ButlerConfig(str(settings.obscore_config))
     )
     ctx["obscore_dataset_type"] = config.obscore_dataset_type
-    ctx["butler_access_token"] = config.butler_access_token
+    ctx["butler_access_token"] = settings.butler_access_token
     logger.info(
         "Initialized ObsCore enrichment resources",
         butler_label=config.butler_label,
