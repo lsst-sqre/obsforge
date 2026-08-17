@@ -18,17 +18,33 @@ from obsforge.models import VisitRegistration
 from obsforge.services import EnrichmentJobService, ObsCoreService
 from obsforge.storage import EnrichmentJobStore, ObsCoreStore
 
-__all__ = ["enrich_visit", "run_enrichment"]
+__all__ = [
+    "MissingWorkerContextError",
+    "enrich_visit",
+    "run_enrichment",
+]
+
+
+class MissingWorkerContextError(RuntimeError):
+    """Raised when required worker context is missing."""
+
+    def __init__(self, key: str | None = None) -> None:
+        self.key = key
+        if key:
+            msg = f"Worker context missing {key!r}"
+        else:
+            msg = "Worker context is required for ObsCore enrichment"
+        super().__init__(msg)
 
 
 def _required_context_value(
     context: Mapping[str, Any] | None, key: str
 ) -> Any:
     if context is None:
-        raise RuntimeError("Worker context is required for ObsCore enrichment")
+        raise MissingWorkerContextError
     value = context.get(key)
     if value is None:
-        raise RuntimeError(f"Worker context missing {key!r}")
+        raise MissingWorkerContextError(key)
     return value
 
 

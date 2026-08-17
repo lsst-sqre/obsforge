@@ -229,6 +229,31 @@ async def test_run_enrichment_marks_failed(
     assert failure_log["error_message"] == "metadata missing"
 
 
+@pytest.mark.asyncio
+async def test_run_enrichment_marks_failed_on_missing_worker_context(
+    app: FastAPI, db_session: AsyncSession
+) -> None:
+    """Test missing worker context records a specific error code."""
+    store = EnrichmentJobStore(db_session)
+    created = await store.add_or_get(make_registration(20260327654321))
+    await store.mark_queued(created.id)
+
+    with pytest.raises(
+        enrichment.MissingWorkerContextError,
+        match="Worker context missing 'butler_access_token'",
+    ):
+        await enrichment.run_enrichment(
+            {"logger": structlog.get_logger("test")}, created.id
+        )
+
+    seen = await store.get(created.id)
+    assert seen.phase == EnrichmentJobPhase.ERROR
+    assert seen.error_code == "MissingWorkerContextError"
+    assert seen.error_message == "Worker context missing 'butler_access_token'"
+    assert seen.started_at is not None
+    assert seen.completed_at is not None
+
+
 def test_worker_settings_uses_enrichment_max_tries() -> None:
     """Test arq and the worker function share the retry limit."""
     assert WorkerSettings.max_tries == config.enrichment_max_tries
