@@ -1,7 +1,6 @@
 """Adapter for retrieving ObsCore records from `lsst.dax.obscore`."""
 
 from collections.abc import Iterator
-from typing import Any, Protocol, cast
 
 from lsst.daf.butler import LabeledButlerFactory
 from lsst.dax.obscore import ExporterConfig, ObscoreExporter
@@ -10,13 +9,6 @@ from lsst.dax.obscore.config import WhereBind
 from obsforge.models import ObsCoreUpsert, VisitRegistration
 
 __all__ = ["DaxObsCoreAdapter"]
-
-
-class _RecordExporter(Protocol):
-    """Public row-oriented `ObscoreExporter` API used by ObsForge."""
-
-    def iter_records(self) -> Iterator[dict[str, Any]]:
-        """Iterate over ObsCore record dictionaries."""
 
 
 class DaxObsCoreAdapter:
@@ -70,6 +62,5 @@ class DaxObsCoreAdapter:
             access_token=self._access_token,
         )
         exporter = ObscoreExporter(butler, cfg)
-        record_exporter = cast("_RecordExporter", exporter)
-        for record in record_exporter.iter_records():
+        for record in exporter.iter_records():
             yield ObsCoreUpsert.model_validate(record)
