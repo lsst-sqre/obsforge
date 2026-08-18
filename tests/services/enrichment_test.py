@@ -15,7 +15,10 @@ from obsforge.models import (
     VisitTimespan,
 )
 from obsforge.schema import EnrichmentJobPhase
-from obsforge.services import EnrichmentJobService
+from obsforge.services import (
+    EnrichmentJobService,
+    EnrichmentQueueNotConfiguredError,
+)
 
 
 def make_registration() -> VisitRegistration:
@@ -427,6 +430,22 @@ async def test_abort_logs_failed_job() -> None:
             "error_message": "Enrichment job aborted",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_abort_requires_queue() -> None:
+    store = FakeEnrichmentJobStore(
+        make_job(EnrichmentJobPhase.QUEUED), arq_job_id="arq-1"
+    )
+    service = EnrichmentJobService(store)
+
+    with pytest.raises(
+        EnrichmentQueueNotConfiguredError,
+        match="Enrichment queue is not configured",
+    ):
+        await service.abort(1)
+
+    assert store.calls == []
 
 
 @pytest.mark.asyncio
