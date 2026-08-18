@@ -26,78 +26,8 @@ from obsforge.storage import (
 from obsforge.worker import main as worker_main
 from obsforge.worker.functions import enrichment
 from obsforge.worker.main import WorkerSettings
-
-
-def make_registration(visit: int) -> VisitRegistration:
-    return VisitRegistration.model_validate(
-        {
-            "instrument": "LSSTCam",
-            "day_obs": 20260327,
-            "visit": visit,
-            "datasets": [
-                {
-                    "dataset_type": "preliminary_visit_image",
-                    "id": "019ba0a6-0173-765f-bf27-56884ff9342a",
-                }
-            ],
-            "timespan": {
-                "begin": "2026-03-27T08:15:10Z",
-                "end": "2026-03-27T08:15:45Z",
-            },
-        }
-    )
-
-
-def make_obscore_upsert(
-    obs_id: str, *, lsst_detector: int = 125
-) -> ObsCoreUpsert:
-    return ObsCoreUpsert(
-        dataproduct_type="image",
-        dataproduct_subtype="lsst.visit_image",
-        facility_name="Rubin:Simonyi",
-        calib_level=2,
-        target_name="ddf_ecdfs, lowdust",
-        obs_id=obs_id,
-        obs_collection="LSST.Prompt",
-        obs_publisher_did=f"D{obs_id}",
-        access_url=f"https://example.com/api/datalink/links?ID=D{obs_id}",
-        access_format="application/x-votable+xml;content=datalink",
-        access_estsize=None,
-        s_resolution=None,
-        s_xel1=None,
-        s_xel2=None,
-        t_xel=None,
-        t_min=61049.11561010359,
-        t_max=61049.115968101854,
-        t_exptime=30.0,
-        t_resolution=None,
-        em_xel=None,
-        em_min=4.026e-07,
-        em_max=5.483e-07,
-        em_res_power=None,
-        em_filter_name="g",
-        o_ucd="phot.flux.density",
-        pol_xel=None,
-        instrument_name="LSSTCam",
-        lsst_visit=2026010800095,
-        lsst_detector=lsst_detector,
-        lsst_tract=None,
-        lsst_patch=None,
-        lsst_band="g",
-        lsst_filter="g_6",
-        obs_title=(
-            "visit_image - g - MC_O_20260108_000095-R30_S22 "
-            "2026-01-09T02:45:51.712950Z"
-        ),
-        s_ra=54.00926387186998,
-        s_dec=-27.174727694762304,
-        s_fov=0.3572492942259721,
-        s_region=(
-            "POLYGON ICRS 53.891809 -27.319323 "
-            "54.174563 -27.276221 54.126402 -27.030061 "
-            "53.844298 -27.072994"
-        ),
-    )
+from tests.support.obscore import make_obscore_upsert
+from tests.support.registration import make_visit_registration
 
 
 @pytest.mark.asyncio
@@ -132,8 +62,12 @@ async def test_run_enrichment_marks_completed(
         ) -> Iterator[ObsCoreUpsert]:
             self.registration = registration
             dataset_id = str(registration.datasets[0].id)
-            yield make_obscore_upsert(f"{dataset_id}-125", lsst_detector=125)
-            yield make_obscore_upsert(f"{dataset_id}-126", lsst_detector=126)
+            yield make_obscore_upsert(
+                obs_id=f"{dataset_id}-125", lsst_detector=125
+            )
+            yield make_obscore_upsert(
+                obs_id=f"{dataset_id}-126", lsst_detector=126
+            )
 
     class SpyObsCoreService:
         def __init__(self, store: Any) -> None:
@@ -150,7 +84,9 @@ async def test_run_enrichment_marks_completed(
             return await self._delegate.upsert_many(records)
 
     store = EnrichmentJobStore(db_session)
-    created = await store.add_or_get(make_registration(20260327123456))
+    created = await store.add_or_get(
+        make_visit_registration(visit=20260327123456)
+    )
     await store.mark_queued(created.id)
     monkeypatch.setattr(enrichment, "DaxObsCoreAdapter", FakeDaxObsCoreAdapter)
     monkeypatch.setattr(enrichment, "ObsCoreService", SpyObsCoreService)
@@ -174,8 +110,8 @@ async def test_run_enrichment_marks_completed(
     assert adapter_instances[0].butler_label == config.butler_label
     assert adapter_instances[0].dataset_type == "preliminary_visit_image"
     assert adapter_instances[0].access_token == "worker-token"
-    assert adapter_instances[0].registration == make_registration(
-        20260327123456
+    assert adapter_instances[0].registration == make_visit_registration(
+        visit=20260327123456
     )
 
     dataset_id = str(created.registration_payload["datasets"][0]["id"])
@@ -207,7 +143,9 @@ async def test_run_enrichment_marks_failed(
         raise RuntimeError("metadata missing")
 
     store = EnrichmentJobStore(db_session)
-    created = await store.add_or_get(make_registration(20260327654321))
+    created = await store.add_or_get(
+        make_visit_registration(visit=20260327654321)
+    )
     await store.mark_queued(created.id)
     monkeypatch.setattr(enrichment, "enrich_visit", fail)
 
@@ -240,7 +178,9 @@ async def test_run_enrichment_marks_failed_on_missing_worker_context(
 ) -> None:
     """Test missing worker context records a specific error code."""
     store = EnrichmentJobStore(db_session)
-    created = await store.add_or_get(make_registration(20260327654321))
+    created = await store.add_or_get(
+        make_visit_registration(visit=20260327654321)
+    )
     await store.mark_queued(created.id)
 
     with pytest.raises(
@@ -265,7 +205,9 @@ async def test_run_enrichment_marks_failed_on_missing_obscore_dataset(
 ) -> None:
     """Test missing ObsCore datasets record a specific error code."""
     store = EnrichmentJobStore(db_session)
-    created = await store.add_or_get(make_registration(20260327654321))
+    created = await store.add_or_get(
+        make_visit_registration(visit=20260327654321)
+    )
     await store.mark_queued(created.id)
 
     with pytest.raises(
@@ -315,11 +257,13 @@ async def test_run_enrichment_marks_failed_on_duplicate_obscore_batch(
             self, registration: VisitRegistration
         ) -> Iterator[ObsCoreUpsert]:
             dataset_id = str(registration.datasets[0].id)
-            yield make_obscore_upsert(dataset_id)
-            yield make_obscore_upsert(dataset_id)
+            yield make_obscore_upsert(obs_id=dataset_id)
+            yield make_obscore_upsert(obs_id=dataset_id)
 
     store = EnrichmentJobStore(db_session)
-    created = await store.add_or_get(make_registration(20260327654321))
+    created = await store.add_or_get(
+        make_visit_registration(visit=20260327654321)
+    )
     await store.mark_queued(created.id)
     monkeypatch.setattr(enrichment, "DaxObsCoreAdapter", FakeDaxObsCoreAdapter)
 
@@ -472,7 +416,9 @@ async def test_run_enrichment_reraises_retry_before_final_attempt(
         raise Retry
 
     store = EnrichmentJobStore(db_session)
-    created = await store.add_or_get(make_registration(20260327123456))
+    created = await store.add_or_get(
+        make_visit_registration(visit=20260327123456)
+    )
     await store.mark_queued(created.id)
     monkeypatch.setattr(enrichment, "enrich_visit", retry)
 
@@ -518,7 +464,9 @@ async def test_run_enrichment_marks_failed_on_final_retry(
         raise Retry
 
     store = EnrichmentJobStore(db_session)
-    created = await store.add_or_get(make_registration(20260327123456))
+    created = await store.add_or_get(
+        make_visit_registration(visit=20260327123456)
+    )
     await store.mark_queued(created.id)
     monkeypatch.setattr(enrichment, "enrich_visit", retry)
 
