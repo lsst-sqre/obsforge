@@ -10,7 +10,7 @@ from lsst.daf.butler import LabeledButlerFactory
 from lsst.dax.obscore import ExporterConfig
 
 import obsforge.adapters.obscore as obscore_adapter
-from obsforge.adapters import DaxObsCoreAdapter
+from obsforge.adapters import DaxObsCoreAdapter, MissingObsCoreDatasetError
 from obsforge.models import ObsCoreUpsert, VisitRegistration
 
 DATASET_ID = UUID("019ba0a6-0173-765f-bf27-56884ff9342a")
@@ -242,13 +242,16 @@ def test_iter_visit_records_rejects_missing_matching_dataset_ids(
     factory = FakeButlerFactory()
     adapter = make_adapter(config, factory)
 
-    with pytest.raises(ValueError, match="preliminary_visit_image"):
+    with pytest.raises(
+        MissingObsCoreDatasetError, match="preliminary_visit_image"
+    ) as exc_info:
         list(
             adapter.iter_visit_records(
                 make_registration(include_matching_dataset=False)
             )
         )
 
+    assert exc_info.value.dataset_type == "preliminary_visit_image"
     assert factory.labels == []
     assert factory.access_tokens == []
     assert config.copied_with_deep is None

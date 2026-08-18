@@ -1,5 +1,5 @@
 """External data adapters for ObsForge."""
 
-from .obscore import DaxObsCoreAdapter
+from .obscore import DaxObsCoreAdapter, MissingObsCoreDatasetError
 
-__all__ = ["DaxObsCoreAdapter"]
+__all__ = ["DaxObsCoreAdapter", "MissingObsCoreDatasetError"]

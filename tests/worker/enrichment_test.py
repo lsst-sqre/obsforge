@@ -13,6 +13,7 @@ from safir.dependencies.db_session import db_session_dependency
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.testing import capture_logs
 
+from obsforge.adapters import MissingObsCoreDatasetError
 from obsforge.config import config
 from obsforge.models import ObsCoreUpsert, VisitRegistration
 from obsforge.schema import EnrichmentJobPhase
@@ -250,6 +251,40 @@ async def test_run_enrichment_marks_failed_on_missing_worker_context(
     assert seen.phase == EnrichmentJobPhase.ERROR
     assert seen.error_code == "MissingWorkerContextError"
     assert seen.error_message == "Worker context missing 'butler_access_token'"
+    assert seen.started_at is not None
+    assert seen.completed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_run_enrichment_marks_failed_on_missing_obscore_dataset(
+    app: FastAPI, db_session: AsyncSession
+) -> None:
+    """Test missing ObsCore datasets record a specific error code."""
+    store = EnrichmentJobStore(db_session)
+    created = await store.add_or_get(make_registration(20260327654321))
+    await store.mark_queued(created.id)
+
+    with pytest.raises(
+        MissingObsCoreDatasetError,
+        match="Registration payload does not include difference_image",
+    ):
+        await enrichment.run_enrichment(
+            {
+                "logger": structlog.get_logger("test"),
+                "labeled_butler_factory": object(),
+                "obscore_config": object(),
+                "obscore_dataset_type": "difference_image",
+                "butler_access_token": SecretStr("worker-token"),
+            },
+            created.id,
+        )
+
+    seen = await store.get(created.id)
+    assert seen.phase == EnrichmentJobPhase.ERROR
+    assert seen.error_code == "MissingObsCoreDatasetError"
+    assert seen.error_message == (
+        "Registration payload does not include difference_image datasets"
+    )
     assert seen.started_at is not None
     assert seen.completed_at is not None
 

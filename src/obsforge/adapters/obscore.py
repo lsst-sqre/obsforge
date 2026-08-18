@@ -8,7 +8,17 @@ from lsst.dax.obscore.config import WhereBind
 
 from obsforge.models import ObsCoreUpsert, VisitRegistration
 
-__all__ = ["DaxObsCoreAdapter"]
+__all__ = ["DaxObsCoreAdapter", "MissingObsCoreDatasetError"]
+
+
+class MissingObsCoreDatasetError(ValueError):
+    """Raised when a registration has no datasets for ObsCore export."""
+
+    def __init__(self, dataset_type: str) -> None:
+        super().__init__(
+            f"Registration payload does not include {dataset_type} datasets"
+        )
+        self.dataset_type = dataset_type
 
 
 class DaxObsCoreAdapter:
@@ -39,10 +49,7 @@ class DaxObsCoreAdapter:
             if dataset.dataset_type == self._dataset_type
         ]
         if not dataset_ids:
-            raise ValueError(
-                "Registration payload does not include "
-                f"{self._dataset_type} datasets"
-            )
+            raise MissingObsCoreDatasetError(self._dataset_type)
 
         cfg = self._config.model_copy(deep=True)
         cfg.select_dataset_types([self._dataset_type])
