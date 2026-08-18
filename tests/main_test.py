@@ -6,9 +6,17 @@ import pytest
 from asgi_lifespan import LifespanManager
 from fastapi import FastAPI
 from safir.dependencies.db_session import db_session_dependency
+from safir.fastapi import ClientRequestError, client_request_error_handler
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from obsforge import main
+
+
+def test_client_request_error_handler_is_registered() -> None:
+    assert (
+        main.app.exception_handlers[ClientRequestError]
+        is client_request_error_handler
+    )
 
 
 @pytest.mark.asyncio

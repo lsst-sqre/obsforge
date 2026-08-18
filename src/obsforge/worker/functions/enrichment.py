@@ -2,27 +2,97 @@
 
 import asyncio
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, cast
 
 import structlog
 from arq.worker import Retry
+from lsst.daf.butler import LabeledButlerFactory
+from lsst.dax.obscore import ExporterConfig
+from pydantic import SecretStr
 from safir.dependencies.db_session import db_session_dependency
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from obsforge.adapters import DaxObsCoreAdapter
 from obsforge.config import config
-from obsforge.services import EnrichmentJobService
-from obsforge.storage import EnrichmentJobStore
+from obsforge.models import VisitRegistration
+from obsforge.services import EnrichmentJobService, ObsCoreService
+from obsforge.storage import EnrichmentJobStore, ObsCoreStore
 
-__all__ = ["enrich_visit", "run_enrichment"]
+__all__ = [
+    "EnrichmentRetriesExhaustedError",
+    "MissingWorkerContextError",
+    "enrich_visit",
+    "run_enrichment",
+]
+
+
+class EnrichmentRetriesExhaustedError(RuntimeError):
+    """Raised when an enrichment job exhausts all arq attempts."""
+
+    def __init__(self) -> None:
+        super().__init__("Enrichment retries exhausted")
+
+
+class MissingWorkerContextError(RuntimeError):
+    """Raised when required worker context is missing."""
+
+    def __init__(self, key: str | None = None) -> None:
+        self.key = key
+        if key:
+            msg = f"Worker context missing {key!r}"
+        else:
+            msg = "Worker context is required for ObsCore enrichment"
+        super().__init__(msg)
+
+
+def _required_context_value(
+    context: Mapping[str, Any] | None, key: str
+) -> Any:
+    if context is None:
+        raise MissingWorkerContextError
+    value = context.get(key)
+    if value is None:
+        raise MissingWorkerContextError(key)
+    return value
 
 
 async def enrich_visit(
-    job_id: int, *, context: Mapping[str, Any] | None = None
+    job_id: int,
+    *,
+    session: AsyncSession,
+    context: Mapping[str, Any] | None = None,
 ) -> None:
     """Run the actual visit enrichment workflow.
 
-    This hook is intentionally empty until the ObsCore enrichment orchestration
-    is wired in.
+    Retrieve ObsCore records for the registered visit and upsert them into
+    ObsDB.
     """
+    job = await EnrichmentJobStore(session).get(job_id)
+    registration = VisitRegistration.model_validate(job.registration_payload)
+    butler_access_token = cast(
+        "SecretStr", _required_context_value(context, "butler_access_token")
+    )
+    adapter = DaxObsCoreAdapter(
+        butler_factory=cast(
+            "LabeledButlerFactory",
+            _required_context_value(context, "labeled_butler_factory"),
+        ),
+        butler_label=config.butler_label,
+        config=cast(
+            "ExporterConfig",
+            _required_context_value(context, "obscore_config"),
+        ),
+        dataset_type=cast(
+            "str",
+            _required_context_value(context, "obscore_dataset_type"),
+        ),
+        access_token=butler_access_token.get_secret_value(),
+    )
+    records = await asyncio.to_thread(
+        lambda: list(adapter.iter_visit_records(registration))
+    )
+    obscore_service = ObsCoreService(ObsCoreStore(session))
+    await obscore_service.upsert_many(records)
 
 
 async def run_enrichment(ctx: dict[Any, Any], job_id: int) -> None:
@@ -39,7 +109,7 @@ async def run_enrichment(ctx: dict[Any, Any], job_id: int) -> None:
     service = EnrichmentJobService(EnrichmentJobStore(session), logger=logger)
     try:
         await service.mark_executing(job_id)
-        await enrich_visit(job_id, context=ctx)
+        await enrich_visit(job_id, session=session, context=ctx)
         await service.mark_completed(job_id)
     except Retry as e:
         if job_try < config.enrichment_max_tries:
@@ -54,7 +124,7 @@ async def run_enrichment(ctx: dict[Any, Any], job_id: int) -> None:
                 f"{config.enrichment_max_tries} arq attempts"
             ),
         )
-        raise RuntimeError("Enrichment retries exhausted") from e
+        raise EnrichmentRetriesExhaustedError from e
     except asyncio.CancelledError:
         await service.mark_failed(
             job_id,

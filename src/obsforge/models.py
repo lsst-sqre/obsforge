@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, Field
 from safir.metadata import Metadata as SafirMetadata
@@ -10,10 +11,12 @@ from .schema import EnrichmentJobPhase
 
 __all__ = [
     "Index",
+    "ObsCoreRecord",
     "ObsCoreUpsert",
     "SerializedEnrichmentJob",
     "SerializedObsCore",
     "StoredEnrichmentJob",
+    "VisitDataset",
     "VisitRegistration",
     "VisitTimespan",
 ]
@@ -41,6 +44,14 @@ class VisitTimespan(BaseModel):
     end: datetime = Field(..., title="Visit end time")
 
 
+class VisitDataset(BaseModel):
+    """Dataset published for the registered visit."""
+
+    dataset_type: str = Field(..., title="Dataset type")
+
+    id: UUID = Field(..., title="Dataset UUID")
+
+
 class VisitRegistration(BaseModel):
     """Prompt Publication payload registering one visit."""
 
@@ -49,6 +60,8 @@ class VisitRegistration(BaseModel):
     day_obs: int = Field(..., title="Visit day")
 
     visit: int = Field(..., title="Unique visit identifier")
+
+    datasets: list[VisitDataset] = Field(..., title="Published datasets")
 
     timespan: VisitTimespan = Field(..., title="Visit timespan")
 
@@ -108,7 +121,9 @@ class ObsCoreRecord(BaseModel):
 
     access_format: str
 
-    access_estsize: int | None
+    # This field is part of the ObsCore schema, but it is not returned by
+    # Rubin ObsCoreExporter.
+    access_estsize: int | None = None
 
     s_ra: float
 

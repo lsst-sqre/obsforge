@@ -1,6 +1,6 @@
 # obsforge
 
-ObsForge: The RSP observation metadata enrichment service
+ObsForge: a metadata enrichment service for Rubin Observatory observations
 Learn more at https://obsforge.lsst.io
 
 obsforge is developed with [FastAPI](https://fastapi.tiangolo.com) and [Safir](https://safir.lsst.io).
@@ -25,6 +25,23 @@ export OBSFORGE_DATABASE_PASSWORD=INSECURE-PASSWORD
 export OBSFORGE_ARQ_MODE=production
 export OBSFORGE_ARQ_QUEUE_URL=redis://localhost:6379/0
 export OBSFORGE_ALEMBIC_CONFIG_PATH=./alembic.ini
+```
+
+The FastAPI app can register jobs with only Postgres and Redis configured. To
+run the worker and populate ObsCore rows, also configure the Prompt Butler
+repository and the ObsCore exporter config:
+
+```sh
+export OBSFORGE_BUTLER_LABEL=prompt
+export OBSFORGE_BUTLER_REPOSITORY=/path/to/prompt/butler
+export OBSFORGE_OBSCORE_CONFIG=/path/to/prompt.yaml
+export OBSFORGE_OBSCORE_DATASET_TYPE=preliminary_visit_image
+```
+
+The worker uses a remote Butler and requires a service token:
+
+```sh
+export OBSFORGE_BUTLER_ACCESS_TOKEN=...
 ```
 
 To enable debug-level application logs, also set:
@@ -57,7 +74,13 @@ curl -sS "$BASE/" | jq .
 PAYLOAD='{
   "instrument": "LSSTCam",
   "day_obs": 20260327,
-  "visit": "20260327123456",
+  "visit": 20260327123456,
+  "datasets": [
+    {
+      "dataset_type": "preliminary_visit_image",
+      "id": "019ba0a6-0173-765f-bf27-56884ff9342a"
+    }
+  ],
   "timespan": {
     "begin": "2026-03-27T08:15:10Z",
     "end": "2026-03-27T08:15:45Z"
@@ -77,6 +100,11 @@ JOB_ID=$(echo "$RESPONSE" | jq -r '.id')
 
 curl -sS "$BASE/jobs/$JOB_ID" | jq .
 ```
+
+The `datasets` entries are persisted in the job's `registration_payload`.
+During enrichment, the worker selects entries whose `dataset_type` matches
+`OBSFORGE_OBSCORE_DATASET_TYPE`, uses their UUIDs to constrain
+`lsst.dax.obscore`, and upserts the returned ObsCore records into ObsDB.
 
 Registering the same `instrument` and `visit` pair again is idempotent:
 

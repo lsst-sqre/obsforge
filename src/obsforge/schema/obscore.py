@@ -1,11 +1,20 @@
 """SQLAlchemy schema for the ObsCore table."""
 
-from sqlalchemy import BigInteger, Float, Integer
+from sqlalchemy import DDL, BigInteger, Float, Integer, event
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import SchemaBase
 
 __all__ = ["ObsCore"]
+
+_IVOA_SCHEMA = "ivoa"
+
+
+event.listen(
+    SchemaBase.metadata,
+    "before_create",
+    DDL(f"CREATE SCHEMA IF NOT EXISTS {_IVOA_SCHEMA}"),
+)
 
 
 def _info(unit: str, description: str, ucd: str) -> dict[str, str]:
@@ -16,7 +25,7 @@ class ObsCore(SchemaBase):
     """ObsCore observation metadata enriched by ObsForge."""
 
     __tablename__ = "ObsCore"
-    __table_args__ = {"schema": "ivoa"}  # noqa: RUF012
+    __table_args__ = ({"schema": _IVOA_SCHEMA},)
 
     dataproduct_type: Mapped[str] = mapped_column(
         nullable=False,

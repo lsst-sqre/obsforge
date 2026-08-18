@@ -1,22 +1,58 @@
 """Tests for the ObsForge database schema."""
 
+import subprocess
+from pathlib import Path
 from typing import cast
 
+import pytest
+from safir.database import create_database_engine, drop_database
 from sqlalchemy import (
+    DDL,
     BigInteger,
     Float,
     Integer,
     Table,
     Text,
     UniqueConstraint,
+    create_mock_engine,
+    text,
 )
 
+from obsforge.config import config
 from obsforge.schema import (
     EnrichmentJob,
     EnrichmentJobPhase,
     ObsCore,
     SchemaBase,
 )
+
+
+@pytest.mark.asyncio
+async def test_schema_migrations() -> None:
+    """Test that Alembic migrations create the current ORM schema."""
+    engine = create_database_engine(
+        config.database_url, config.database_password
+    )
+    try:
+        await drop_database(engine, SchemaBase.metadata)
+        async with engine.begin() as connection:
+            await connection.execute(
+                text("DROP SCHEMA IF EXISTS ivoa CASCADE")
+            )
+    finally:
+        await engine.dispose()
+
+    alembic_config_path = Path(__file__).parents[1] / "alembic.ini"
+    subprocess.run(
+        ["alembic", "-c", str(alembic_config_path), "upgrade", "head"],
+        check=True,
+        cwd=alembic_config_path.parent,
+    )
+    subprocess.run(
+        ["alembic", "-c", str(alembic_config_path), "check"],
+        check=True,
+        cwd=alembic_config_path.parent,
+    )
 
 
 def test_enrichment_job_table_registered() -> None:
@@ -79,6 +115,25 @@ def test_enrichment_job_phase_values() -> None:
 
 def test_obscore_table_registered() -> None:
     assert SchemaBase.metadata.tables["ivoa.ObsCore"] is ObsCore.__table__
+
+
+def test_obscore_schema_create_ddl_registered() -> None:
+    # ObsCore owns the ivoa schema setup, so importing it should register the
+    # metadata hook that creates the schema before tables are created.
+    statements: list[str] = []
+
+    def record(sql: object, *_args: object, **_kwargs: object) -> None:
+        if isinstance(sql, DDL):
+            statements.append(str(sql))
+
+    engine = create_mock_engine(
+        "postgresql+psycopg://",
+        record,
+    )
+
+    SchemaBase.metadata.create_all(engine)
+
+    assert statements[0] == "CREATE SCHEMA IF NOT EXISTS ivoa"
 
 
 def test_obscore_columns() -> None:

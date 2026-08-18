@@ -12,7 +12,14 @@ from obsforge.models import (
 )
 from obsforge.schema import EnrichmentJobPhase
 
-__all__ = ["EnrichmentJobService"]
+__all__ = ["EnrichmentJobService", "EnrichmentQueueNotConfiguredError"]
+
+
+class EnrichmentQueueNotConfiguredError(RuntimeError):
+    """Raised when queue-only enrichment behavior is used without a queue."""
+
+    def __init__(self) -> None:
+        super().__init__("Enrichment queue is not configured")
 
 
 class EnrichmentJobStoreProtocol(Protocol):
@@ -159,7 +166,7 @@ class EnrichmentJobService:
     async def abort(self, job_id: int) -> bool:
         """Abort an enqueued enrichment job."""
         if self._queue is None:
-            raise RuntimeError("Enrichment queue is not configured")
+            raise EnrichmentQueueNotConfiguredError
 
         job = await self._store.get_internal(job_id)
         if not job.arq_job_id or not await self._queue.abort(job.arq_job_id):

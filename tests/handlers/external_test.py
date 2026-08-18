@@ -81,6 +81,12 @@ async def test_register_visit(
         "instrument": "LSSTCam",
         "day_obs": 20260108,
         "visit": 2026010800095,
+        "datasets": [
+            {
+                "dataset_type": "preliminary_visit_image",
+                "id": "019ba0a6-0173-765f-bf27-56884ff9342a",
+            }
+        ],
         "timespan": {
             "begin": "2026-01-09T02:45:51Z",
             "end": "2026-01-09T02:46:26Z",
@@ -99,9 +105,13 @@ async def test_register_visit(
         "instrument": "LSSTCam",
         "day_obs": 20260108,
         "phase": "QUEUED",
+        "error_code": None,
+        "error_message": None,
         "registration_payload": payload,
         "created_at": "2026-01-09T02:45:51Z",
         "updated_at": "2026-01-09T02:45:51Z",
+        "started_at": None,
+        "completed_at": None,
     }
 
 
@@ -112,6 +122,12 @@ async def test_register_visit_persists_job(client: AsyncClient) -> None:
         "instrument": "LSSTCam",
         "day_obs": 20260108,
         "visit": 2026010800095,
+        "datasets": [
+            {
+                "dataset_type": "preliminary_visit_image",
+                "id": "019ba0a6-0173-765f-bf27-56884ff9342a",
+            }
+        ],
         "timespan": {
             "begin": "2026-01-09T02:45:51Z",
             "end": "2026-01-09T02:46:26Z",
@@ -139,12 +155,50 @@ async def test_register_visit_persists_job(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_register_visit_rejects_malformed_dataset_id(
+    client: AsyncClient,
+) -> None:
+    """Test dataset IDs must be UUIDs."""
+    payload = {
+        "instrument": "LSSTCam",
+        "day_obs": 20260108,
+        "visit": 2026010800095,
+        "datasets": [
+            {
+                "dataset_type": "preliminary_visit_image",
+                "id": "not-a-uuid",
+            }
+        ],
+        "timespan": {
+            "begin": "2026-01-09T02:45:51Z",
+            "end": "2026-01-09T02:46:26Z",
+        },
+    }
+
+    response = await client.post("/obsforge/register", json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"] == [
+        "body",
+        "datasets",
+        0,
+        "id",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_get_job(client: AsyncClient) -> None:
     """Test ``GET /obsforge/jobs/{job_id}``."""
     payload = {
         "instrument": "LSSTCam",
         "day_obs": 20260327,
         "visit": "20260327123456",
+        "datasets": [
+            {
+                "dataset_type": "preliminary_visit_image",
+                "id": "019ba0a6-0173-765f-bf27-56884ff9342a",
+            }
+        ],
         "timespan": {
             "begin": "2026-03-27T08:15:10Z",
             "end": "2026-03-27T08:15:45Z",
@@ -158,6 +212,10 @@ async def test_get_job(client: AsyncClient) -> None:
     assert response.status_code == 200
     assert response.json()["id"] == job_id
     assert response.json()["phase"] == "QUEUED"
+    assert response.json()["error_code"] is None
+    assert response.json()["error_message"] is None
+    assert response.json()["started_at"] is None
+    assert response.json()["completed_at"] is None
 
 
 @pytest.mark.asyncio
@@ -166,3 +224,11 @@ async def test_get_unknown_job_returns_404(client: AsyncClient) -> None:
     response = await client.get("/obsforge/jobs/404")
 
     assert response.status_code == 404
+    assert response.json() == {
+        "detail": [
+            {
+                "msg": "Unknown enrichment job 404",
+                "type": "unknown_enrichment_job",
+            }
+        ]
+    }

@@ -1,6 +1,10 @@
 """Business services for ObsForge."""
 
-from .enrichment import EnrichmentJobService
+from .enrichment import EnrichmentJobService, EnrichmentQueueNotConfiguredError
 from .obscore import ObsCoreService
 
-__all__ = ["EnrichmentJobService", "ObsCoreService"]
+__all__ = [
+    "EnrichmentJobService",
+    "EnrichmentQueueNotConfiguredError",
+    "ObsCoreService",
+]

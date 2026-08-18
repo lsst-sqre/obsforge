@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.stdlib import BoundLogger
 
 from ..config import config
-from ..exceptions import UnknownEnrichmentJobError
 from ..models import Index, SerializedEnrichmentJob, VisitRegistration
 from ..services import EnrichmentJobService
 from ..storage import EnrichmentJobStore, EnrichmentQueueStore
@@ -57,7 +56,6 @@ async def get_index(
 @external_router.post(
     "/register",
     response_model=SerializedEnrichmentJob,
-    response_model_exclude_none=True,
     status_code=status.HTTP_202_ACCEPTED,
     summary="Register a visit for enrichment",
 )
@@ -80,7 +78,6 @@ async def register_visit(
 @external_router.get(
     "/jobs/{job_id}",
     response_model=SerializedEnrichmentJob,
-    response_model_exclude_none=True,
     summary="Get an enrichment job",
 )
 async def get_job(
@@ -93,10 +90,7 @@ async def get_job(
     store = EnrichmentJobStore(session)
     queue = EnrichmentQueueStore(arq_queue, logger)
     service = EnrichmentJobService(store, queue, logger=logger)
-    try:
-        return await service.get(job_id)
-    except UnknownEnrichmentJobError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    return await service.get(job_id)
 
 
 @external_router.delete(
@@ -114,9 +108,6 @@ async def delete_job(
     store = EnrichmentJobStore(session)
     queue = EnrichmentQueueStore(arq_queue, logger)
     service = EnrichmentJobService(store, queue, logger=logger)
-    try:
-        aborted = await service.abort(job_id)
-    except UnknownEnrichmentJobError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from e
+    aborted = await service.abort(job_id)
     if not aborted:
         raise HTTPException(status_code=404, detail="Queued job not found")

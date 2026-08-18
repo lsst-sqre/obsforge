@@ -1,5 +1,7 @@
 """Tests for ObsCore business logic."""
 
+from collections.abc import Sequence
+
 import pytest
 
 from obsforge.models import ObsCoreUpsert, SerializedObsCore
@@ -13,12 +15,12 @@ def make_obscore_upsert() -> ObsCoreUpsert:
         facility_name="Rubin:Simonyi",
         calib_level=2,
         target_name="ddf_ecdfs, lowdust",
-        obs_id="MC_O_20260108_000095",
+        obs_id="D019ba0a6-0173-765f-bf27-56884ff9342",
         obs_collection="LSST.Prompt",
-        obs_publisher_did="D019ba0a6-0173-765f-bf27-56884ff9342a",
+        obs_publisher_did="ivo://org.rubinobs/usdac/lsst-prompt?repo=prompt&id={id}",
         access_url=(
             "https://example.com/api/datalink/links?"
-            "ID=D019ba0a6-0173-765f-bf27-56884ff9342a"
+            "ID=D019ba0a6-0173-765f-bf27-56884ff9342"
         ),
         access_format="application/x-votable+xml;content=datalink",
         access_estsize=None,
@@ -72,6 +74,12 @@ class FakeObsCoreStore:
         self.calls.append("upsert")
         return self.obscore
 
+    async def upsert_many(
+        self, records: Sequence[ObsCoreUpsert]
+    ) -> list[SerializedObsCore]:
+        self.calls.append("upsert_many")
+        return [self.obscore] * len(records)
+
     async def get_by_obs_id(self, obs_id: str) -> SerializedObsCore:
         self.calls.append("get_by_obs_id")
         return self.obscore
@@ -86,6 +94,19 @@ async def test_upsert_delegates_to_store() -> None:
 
     assert obscore == store.obscore
     assert store.calls == ["upsert"]
+
+
+@pytest.mark.asyncio
+async def test_upsert_many_delegates_to_store() -> None:
+    store = FakeObsCoreStore()
+    service = ObsCoreService(store)
+
+    obscore = await service.upsert_many(
+        [make_obscore_upsert(), make_obscore_upsert()]
+    )
+
+    assert obscore == [store.obscore, store.obscore]
+    assert store.calls == ["upsert_many"]
 
 
 @pytest.mark.asyncio

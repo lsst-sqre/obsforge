@@ -17,6 +17,7 @@ from safir.database import create_database_engine, is_database_current
 from safir.dependencies.arq import arq_dependency
 from safir.dependencies.db_session import db_session_dependency
 from safir.dependencies.http_client import http_client_dependency
+from safir.fastapi import ClientRequestError, client_request_error_handler
 from safir.logging import configure_uvicorn_logging
 from safir.middleware.x_forwarded import XForwardedMiddleware
 from safir.slack.webhook import SlackRouteErrorHandler
@@ -72,6 +73,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 """The main FastAPI application for obsforge."""
+
+app.exception_handler(ClientRequestError)(client_request_error_handler)
 
 # Attach the routers.
 app.include_router(internal_router)
