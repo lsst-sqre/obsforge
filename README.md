@@ -1,6 +1,6 @@
 # obsforge
 
-ObsForge: The RSP observation metadata enrichment service
+ObsForge: a metadata enrichment service for Rubin Observatory observations
 Learn more at https://obsforge.lsst.io
 
 obsforge is developed with [FastAPI](https://fastapi.tiangolo.com) and [Safir](https://safir.lsst.io).
