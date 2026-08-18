@@ -18,7 +18,11 @@ from obsforge.config import config
 from obsforge.models import ObsCoreUpsert, VisitRegistration
 from obsforge.schema import EnrichmentJobPhase
 from obsforge.services import ObsCoreService
-from obsforge.storage import EnrichmentJobStore, ObsCoreStore
+from obsforge.storage import (
+    DuplicateObsCoreBatchError,
+    EnrichmentJobStore,
+    ObsCoreStore,
+)
 from obsforge.worker import main as worker_main
 from obsforge.worker.functions import enrichment
 from obsforge.worker.main import WorkerSettings
@@ -284,6 +288,58 @@ async def test_run_enrichment_marks_failed_on_missing_obscore_dataset(
     assert seen.error_code == "MissingObsCoreDatasetError"
     assert seen.error_message == (
         "Registration payload does not include difference_image datasets"
+    )
+    assert seen.started_at is not None
+    assert seen.completed_at is not None
+
+
+@pytest.mark.asyncio
+async def test_run_enrichment_marks_failed_on_duplicate_obscore_batch(
+    app: FastAPI, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test duplicate ObsCore batches record a specific error code."""
+
+    class FakeDaxObsCoreAdapter:
+        def __init__(
+            self,
+            *,
+            butler_factory: Any,
+            butler_label: str,
+            config: Any,
+            dataset_type: str,
+            access_token: str | None = None,
+        ) -> None:
+            pass
+
+        def iter_visit_records(
+            self, registration: VisitRegistration
+        ) -> Iterator[ObsCoreUpsert]:
+            dataset_id = str(registration.datasets[0].id)
+            yield make_obscore_upsert(dataset_id)
+            yield make_obscore_upsert(dataset_id)
+
+    store = EnrichmentJobStore(db_session)
+    created = await store.add_or_get(make_registration(20260327654321))
+    await store.mark_queued(created.id)
+    monkeypatch.setattr(enrichment, "DaxObsCoreAdapter", FakeDaxObsCoreAdapter)
+
+    with pytest.raises(DuplicateObsCoreBatchError, match="duplicate obs_id"):
+        await enrichment.run_enrichment(
+            {
+                "logger": structlog.get_logger("test"),
+                "labeled_butler_factory": object(),
+                "obscore_config": object(),
+                "obscore_dataset_type": "preliminary_visit_image",
+                "butler_access_token": SecretStr("worker-token"),
+            },
+            created.id,
+        )
+
+    seen = await store.get(created.id)
+    assert seen.phase == EnrichmentJobPhase.ERROR
+    assert seen.error_code == "DuplicateObsCoreBatchError"
+    assert seen.error_message == (
+        "ObsCore batch contains duplicate obs_id values"
     )
     assert seen.started_at is not None
     assert seen.completed_at is not None

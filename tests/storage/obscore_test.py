@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from obsforge.exceptions import UnknownObsCoreRecordError
 from obsforge.models import ObsCoreUpsert
-from obsforge.storage import ObsCoreStore
+from obsforge.storage import DuplicateObsCoreBatchError, ObsCoreStore
 
 
 def make_obscore(
@@ -165,7 +165,7 @@ async def test_upsert_many_rejects_duplicate_obs_ids(
 ) -> None:
     store = ObsCoreStore(db_session)
 
-    with pytest.raises(ValueError, match="duplicate obs_id"):
+    with pytest.raises(DuplicateObsCoreBatchError, match="duplicate obs_id"):
         await store.upsert_many(
             [
                 make_obscore(obs_id="D019ba0a6-0173-765f-bf27-56884ff9342"),

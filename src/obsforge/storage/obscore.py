@@ -12,7 +12,14 @@ from obsforge.exceptions import UnknownObsCoreRecordError
 from obsforge.models import ObsCoreUpsert, SerializedObsCore
 from obsforge.schema import ObsCore as SQLObsCore
 
-__all__ = ["ObsCoreStore"]
+__all__ = ["DuplicateObsCoreBatchError", "ObsCoreStore"]
+
+
+class DuplicateObsCoreBatchError(ValueError):
+    """Raised when an ObsCore batch contains duplicate observation IDs."""
+
+    def __init__(self) -> None:
+        super().__init__("ObsCore batch contains duplicate obs_id values")
 
 
 class ObsCoreStore:
@@ -40,7 +47,7 @@ class ObsCoreStore:
 
         obs_ids = [record.obs_id for record in records]
         if len(set(obs_ids)) != len(obs_ids):
-            raise ValueError("ObsCore batch contains duplicate obs_id values")
+            raise DuplicateObsCoreBatchError
 
         stmt = self._upsert_statement(
             [record.model_dump() for record in records]
