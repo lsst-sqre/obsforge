@@ -523,7 +523,10 @@ async def test_run_enrichment_marks_failed_on_final_retry(
     monkeypatch.setattr(enrichment, "enrich_visit", retry)
 
     with capture_logs() as logs:
-        with pytest.raises(RuntimeError, match="retries exhausted"):
+        with pytest.raises(
+            enrichment.EnrichmentRetriesExhaustedError,
+            match="retries exhausted",
+        ):
             await enrichment.run_enrichment(
                 {
                     "logger": structlog.get_logger("test"),

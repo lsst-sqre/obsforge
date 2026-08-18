@@ -19,10 +19,18 @@ from obsforge.services import EnrichmentJobService, ObsCoreService
 from obsforge.storage import EnrichmentJobStore, ObsCoreStore
 
 __all__ = [
+    "EnrichmentRetriesExhaustedError",
     "MissingWorkerContextError",
     "enrich_visit",
     "run_enrichment",
 ]
+
+
+class EnrichmentRetriesExhaustedError(RuntimeError):
+    """Raised when an enrichment job exhausts all arq attempts."""
+
+    def __init__(self) -> None:
+        super().__init__("Enrichment retries exhausted")
 
 
 class MissingWorkerContextError(RuntimeError):
@@ -116,7 +124,7 @@ async def run_enrichment(ctx: dict[Any, Any], job_id: int) -> None:
                 f"{config.enrichment_max_tries} arq attempts"
             ),
         )
-        raise RuntimeError("Enrichment retries exhausted") from e
+        raise EnrichmentRetriesExhaustedError from e
     except asyncio.CancelledError:
         await service.mark_failed(
             job_id,
