@@ -24,6 +24,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Install native dependency build packages
+        run: sudo ./scripts/install-dependency-packages.sh
+
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
