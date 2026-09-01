@@ -43,14 +43,20 @@ WORKDIR /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --frozen --no-default-groups --compile-bytecode --no-install-project
+    uv sync --frozen --no-default-groups \
+    --compile-bytecode --no-install-project
 
 # Install the application itself.
 ADD . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-default-groups --compile-bytecode --no-editable
+    uv sync --frozen --no-default-groups \
+    --compile-bytecode --no-editable
 
 FROM base-image AS runtime-image
+
+# confluent-kafka is compiled against this pinned library in install-image.
+COPY --from=install-image /usr/local/lib/librdkafka.so* /usr/local/lib/
+RUN ldconfig
 
 # Create a non-root user.
 RUN useradd --create-home appuser
