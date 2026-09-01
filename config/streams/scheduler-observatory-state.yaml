@@ -1,0 +1,20 @@
+version: 1
+name: scheduler-observatory-state
+consumer_group: obsforge-scheduler-observatory-state-v1
+
+source:
+  topic: lsst.sal.Scheduler.observatoryState
+
+sink:
+  schema: scheduler
+  table: observatory_state
+
+transformations:
+  - operation: drop_fields
+    fields:
+      - salIndex
+    prefixes:
+      - private_
+  - operation: epoch_seconds_to_datetime
+    field: timestamp
+    input_scale: tai
