@@ -20,11 +20,14 @@ classifiers = [
 requires-python = ">=3.14"
 dependencies = [
     "alembic[tz]>=1.16",
+    "astropy>=7",
     "fastapi>=0.100",
     "lsst-daf-butler[remote]>=29",
     "lsst-dax-obscore>=30.2026.2900",
     "pydantic>2",
     "pydantic-settings>=2",
+    "pyyaml>=6",
+    "quixstreams[avro,postgresql]>=3.25,<4",
     "safir[arq,db]>=15",
     "sqlalchemy[asyncio]>=2",
     "structlog",

@@ -1,7 +1,7 @@
 """Configuration definition."""
 
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 from arq.connections import RedisSettings
 from pydantic import Field, HttpUrl, SecretStr
@@ -28,6 +28,34 @@ class Config(BaseSettings):
 
     database_password: SecretStr | None = Field(
         None, title="Password for ObsForge database"
+    )
+
+    stream_config_path: Path = Field(
+        Path("/app/config/streams/scheduler-observatory-state.yaml"),
+        title="Stream pipeline configuration",
+        description="Path to the versioned Quix Streams pipeline YAML file",
+    )
+
+    kafka_broker_address: str | None = Field(
+        None,
+        title="Kafka broker address",
+        description="Comma-separated Kafka bootstrap server addresses",
+    )
+
+    kafka_security_protocol: Literal["sasl_plaintext", "sasl_ssl"] = Field(
+        "sasl_ssl", title="Kafka security protocol"
+    )
+
+    kafka_username: str | None = Field(None, title="Kafka username")
+
+    kafka_password: SecretStr | None = Field(None, title="Kafka password")
+
+    schema_registry_url: HttpUrl | None = Field(
+        None, title="Confluent-compatible Schema Registry URL"
+    )
+
+    schema_registry_token: SecretStr | None = Field(
+        None, title="Schema Registry bearer token"
     )
 
     arq_mode: ArqMode = Field(

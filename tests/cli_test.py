@@ -77,6 +77,30 @@ def test_init(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     ]
 
 
+def test_process_stream(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    stream_config_path = tmp_path / "streams.yaml"
+    stream_config_path.touch()
+    calls: list[tuple[Any, Path]] = []
+
+    def fake_run_stream(config: Any, path: Path) -> None:
+        calls.append((config, path))
+
+    monkeypatch.setattr("obsforge.cli.run_stream", fake_run_stream)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        ["process-stream", "--stream-config-path", str(stream_config_path)],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert len(calls) == 1
+    assert calls[0][1] == stream_config_path
+
+
 def test_update_schema(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

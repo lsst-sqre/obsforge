@@ -18,11 +18,13 @@ from safir.database import (
 )
 
 from .schema import SchemaBase
+from .streams.runner import StreamSettingsError, run_stream
 
 __all__ = [
     "help",
     "init",
     "main",
+    "process_stream",
     "update_schema",
     "validate_schema",
 ]
@@ -74,6 +76,23 @@ def init(*, alembic_config_path: Path, reset: bool) -> None:
 
     asyncio.run(_init_db())
     stamp_database(alembic_config_path)
+
+
+@main.command("process-stream")
+@click.option(
+    "--stream-config-path",
+    envvar="OBSFORGE_STREAM_CONFIG_PATH",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    default=None,
+    help="Quix Streams pipeline YAML file.",
+)
+def process_stream(*, stream_config_path: Path | None) -> None:
+    """Process the configured Kafka topic into ObsDB."""
+    config = _get_config()
+    try:
+        run_stream(config, stream_config_path or config.stream_config_path)
+    except StreamSettingsError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 @main.command()

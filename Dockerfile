@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 FROM base-image AS install-image
 
 # Install uv.
-COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.7 /uv /bin/uv
 
 # Install system packages only needed for building dependencies.
 COPY scripts/install-dependency-packages.sh .
@@ -43,14 +43,20 @@ WORKDIR /app
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --frozen --no-default-groups --compile-bytecode --no-install-project
+    uv sync --frozen --no-default-groups \
+    --compile-bytecode --no-install-project
 
 # Install the application itself.
 ADD . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-default-groups --compile-bytecode --no-editable
+    uv sync --frozen --no-default-groups \
+    --compile-bytecode --no-editable
 
 FROM base-image AS runtime-image
+
+# confluent-kafka is compiled against this pinned library in install-image.
+COPY --from=install-image /usr/local/lib/librdkafka.so* /usr/local/lib/
+RUN ldconfig
 
 # Create a non-root user.
 RUN useradd --create-home appuser
@@ -58,6 +64,7 @@ RUN useradd --create-home appuser
 # Copy the virtualenv and the Alembic configuration.
 COPY --from=install-image /app/alembic /app/alembic
 COPY --from=install-image /app/alembic.ini /app/alembic.ini
+COPY --from=install-image /app/config /app/config
 COPY --from=install-image /app/.venv /app/.venv
 
 # Switch to the non-root user.
