@@ -1,6 +1,7 @@
 """Tests for the ObsForge database schema."""
 
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import cast
 
@@ -9,6 +10,7 @@ from safir.database import create_database_engine, drop_database
 from sqlalchemy import (
     DDL,
     BigInteger,
+    DateTime,
     Float,
     Integer,
     Table,
@@ -23,6 +25,7 @@ from obsforge.schema import (
     EnrichmentJob,
     EnrichmentJobPhase,
     ObsCore,
+    SchedulerObservatoryState,
     SchemaBase,
 )
 
@@ -38,6 +41,9 @@ async def test_schema_migrations() -> None:
         async with engine.begin() as connection:
             await connection.execute(
                 text("DROP SCHEMA IF EXISTS ivoa CASCADE")
+            )
+            await connection.execute(
+                text("DROP SCHEMA IF EXISTS scheduler CASCADE")
             )
     finally:
         await engine.dispose()
@@ -133,7 +139,8 @@ def test_obscore_schema_create_ddl_registered() -> None:
 
     SchemaBase.metadata.create_all(engine)
 
-    assert statements[0] == "CREATE SCHEMA IF NOT EXISTS ivoa"
+    assert "CREATE SCHEMA IF NOT EXISTS ivoa" in statements
+    assert "CREATE SCHEMA IF NOT EXISTS scheduler" in statements
 
 
 def test_obscore_columns() -> None:
@@ -233,3 +240,35 @@ def test_obscore_column_info() -> None:
         "description": "Identifier for CCD within the LSSTCam focal plane",
         "ucd": "meta.id;instr.det",
     }
+
+
+def test_scheduler_observatory_state_schema() -> None:
+    table = SchedulerObservatoryState.__table__
+
+    assert SchemaBase.metadata.tables["scheduler.observatory_state"] is table
+    assert table.schema == "scheduler"
+    assert set(table.columns.keys()) == {
+        "timestamp",
+        "ra",
+        "declination",
+        "positionAngle",
+        "parallacticAngle",
+        "tracking",
+        "telescopeAltitude",
+        "telescopeAzimuth",
+        "telescopeRotator",
+        "domeAltitude",
+        "domeAzimuth",
+        "filterPosition",
+        "filterMounted",
+        "filterUnmounted",
+    }
+    timestamp = table.columns["timestamp"]
+    assert timestamp.primary_key is True
+    assert timestamp.nullable is False
+    assert timestamp.type.python_type is datetime
+    assert isinstance(timestamp.type, DateTime)
+    assert timestamp.type.timezone is True
+    assert table.columns["tracking"].type.python_type is bool
+    assert table.columns["filterMounted"].type.python_type is str
+    assert not table.indexes
