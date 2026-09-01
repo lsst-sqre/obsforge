@@ -26,5 +26,5 @@ apt-get update
 # Install security updates:
 apt-get -y upgrade
 
-# Example of installing a new package, without unnecessary packages:
-#apt-get -y install --no-install-recommends git
+# Runtime dependencies of the librdkafka build copied from install-image.
+apt-get -y install --no-install-recommends libsasl2-2 libzstd1
