@@ -22,6 +22,8 @@ dependencies = [
     "alembic[tz]>=1.16",
     "astropy>=7",
     "fastapi>=0.100",
+    # Authlib's HTTP client, used by Confluent Kafka's Schema Registry client.
+    "httpx2",
     "lsst-daf-butler[remote]>=29",
     "lsst-dax-obscore>=30.2026.2900",
     "pydantic>2",

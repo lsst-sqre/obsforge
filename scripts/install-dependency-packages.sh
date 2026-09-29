@@ -40,12 +40,13 @@ apt-get -y install --no-install-recommends \
     pkg-config \
     zlib1g-dev
 
-# Quix Streams 3.25 pins confluent-kafka 2.11, which requires matching
-# librdkafka headers. Debian trixie's 2.8 package is too old, so install the
-# pinned upstream release into /usr/local. Verify the archive before building
-# to keep the image build reproducible.
-librdkafka_version=2.11.1
-librdkafka_sha256=a2c87186b081e2705bb7d5338d5a01bc88d43273619b372ccb7bb0d264d0ca9f
+# uv.lock selects confluent-kafka 2.12.2, whose source build requires
+# librdkafka 2.12.1 or newer. Debian trixie's 2.8 package is too old, so install
+# the matching pinned release into /usr/local. Review this version whenever
+# uv.lock changes, and verify the archive before building to keep the image
+# build reproducible.
+librdkafka_version=2.12.1
+librdkafka_sha256=ec103fa05cb0f251e375f6ea0b6112cfc9d0acd977dc5b69fdc54242ba38a16f
 librdkafka_archive=/tmp/librdkafka.tar.gz
 librdkafka_source=/tmp/librdkafka
 

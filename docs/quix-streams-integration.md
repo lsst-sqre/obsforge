@@ -146,17 +146,17 @@ ObsDB. Kafka authentication is fixed to `SCRAM-SHA-512`; the transport defaults
 to `SASL_SSL` and can be changed to `SASL_PLAINTEXT` with
 `OBSFORGE_KAFKA_SECURITY_PROTOCOL` for a trusted deployment.
 
-Schema Registry access uses the required token as an HTTP bearer token. Quix
-3.25 does not expose static bearer-token fields on its registry settings model,
-although its pinned Confluent client supports them. ObsForge therefore extends
-the Quix model with those fields. The token remains a `SecretStr` until Quix
-builds the client configuration.
+Schema Registry access uses the required token as an HTTP bearer token. The
+locked Quix Streams 3.28.1 does not expose static bearer-token fields on its
+registry settings model, although its pinned Confluent client supports them.
+ObsForge therefore extends the Quix model with those fields. The token remains
+a `SecretStr` until Quix builds the client configuration.
 
-Quix Streams 3.25 pins `confluent-kafka` below 2.12. On Python 3.14,
-`confluent-kafka` 2.11.1 may compile from source because a platform wheel is
-unavailable. The container builds the matching, checksummed librdkafka 2.11.1
-and copies its runtime library into the final image. Local development systems
-must likewise provide librdkafka 2.11.1 or newer headers and libraries.
+The lock file selects `confluent-kafka` 2.12.2. When it is built from source,
+it requires librdkafka 2.12.1 or newer. The container builds the matching,
+checksummed librdkafka 2.12.1 and copies its runtime library into the final
+image for source-built installations. Local source builds must likewise
+provide librdkafka 2.12.1 or newer headers and libraries.
 
 ## Multiple topics and scaling
 
