@@ -33,7 +33,9 @@ class ObsCoreStore:
         """Insert or update one ObsCore record by observation ID."""
         stmt = self._upsert_statement([record.model_dump()])
         async with self._session.begin():
-            obscore = (await self._session.execute(stmt)).scalar_one()
+            obscore: SQLObsCore = (
+                await self._session.execute(stmt)
+            ).scalar_one()
             return self._serialize(obscore)
 
     @retry_async_transaction
@@ -53,7 +55,9 @@ class ObsCoreStore:
             [record.model_dump() for record in records]
         )
         async with self._session.begin():
-            rows = (await self._session.execute(stmt)).scalars().all()
+            rows: Sequence[SQLObsCore] = (
+                (await self._session.execute(stmt)).scalars().all()
+            )
 
         rows_by_obs_id = {row.obs_id: self._serialize(row) for row in rows}
         return [rows_by_obs_id[obs_id] for obs_id in obs_ids]

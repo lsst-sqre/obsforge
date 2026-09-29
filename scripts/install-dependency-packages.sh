@@ -28,4 +28,37 @@ apt-get update
 # C modules, particularly when upgrading to newer Python versions. git is
 # required by setuptools_scm for package installation. libffi-dev is sometimes
 # needed to build cffi (a cryptography dependency).
-apt-get -y install --no-install-recommends build-essential git libffi-dev
+apt-get -y install --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    curl \
+    git \
+    libffi-dev \
+    libsasl2-dev \
+    libssl-dev \
+    libzstd-dev \
+    pkg-config \
+    zlib1g-dev
+
+# Quix Streams 3.25 pins confluent-kafka 2.11, which requires matching
+# librdkafka headers. Debian trixie's 2.8 package is too old, so install the
+# pinned upstream release into /usr/local. Verify the archive before building
+# to keep the image build reproducible.
+librdkafka_version=2.11.1
+librdkafka_sha256=a2c87186b081e2705bb7d5338d5a01bc88d43273619b372ccb7bb0d264d0ca9f
+librdkafka_archive=/tmp/librdkafka.tar.gz
+librdkafka_source=/tmp/librdkafka
+
+curl --fail --location --silent --show-error \
+    "https://github.com/confluentinc/librdkafka/archive/refs/tags/v${librdkafka_version}.tar.gz" \
+    --output "${librdkafka_archive}"
+echo "${librdkafka_sha256}  ${librdkafka_archive}" | sha256sum --check
+mkdir "${librdkafka_source}"
+tar --extract --gzip --file "${librdkafka_archive}" \
+    --directory "${librdkafka_source}" --strip-components=1
+cd "${librdkafka_source}"
+./configure --prefix=/usr/local
+make -j"$(nproc)"
+make install
+ldconfig
+rm -rf "${librdkafka_archive}" "${librdkafka_source}"
