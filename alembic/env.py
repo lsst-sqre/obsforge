@@ -20,7 +20,7 @@ def _include_name(
 ) -> bool:
     """Restrict Alembic autogenerate to schemas owned by ObsForge."""
     if type_ == "schema":
-        return name in {None, "ivoa"}
+        return name in {None, "ivoa", "scheduler"}
     return True
 
 
