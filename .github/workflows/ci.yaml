@@ -41,6 +41,12 @@ jobs:
           version: ${{ env.UV_VERSION }}
 
       - name: Run tox
+        # Work around tox-docker 5.0.0 assuming NetworkSettings.Gateway exists on Linux.
+        # Docker 29 no longer exposes this top-level field, causing a KeyError.
+        # Use localhost to access containers through their published ports.
+        # TODO: Remove once tox-docker supports the updated Docker network settings.
+        env:
+          TOX_DOCKER_GATEWAY: "127.0.0.1"
         run: uv run --only-group=tox tox run -e lint,typing,py,coverage-report
 
   build:
