@@ -18,7 +18,6 @@ from safir.database import (
 )
 
 from .schema import SchemaBase
-from .streams.runner import StreamSettingsError, run_stream
 
 __all__ = [
     "help",
@@ -33,6 +32,11 @@ __all__ = [
 def _get_config() -> Any:
     """Load configuration lazily so help works without database settings."""
     return import_module("obsforge.config").config
+
+
+def _get_stream_runner() -> Any:
+    """Load the stream runner lazily after configuration is available."""
+    return import_module("obsforge.streams.runner")
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
@@ -89,9 +93,12 @@ def init(*, alembic_config_path: Path, reset: bool) -> None:
 def process_stream(*, stream_config_path: Path | None) -> None:
     """Process the configured Kafka topic into ObsDB."""
     config = _get_config()
+    stream_runner = _get_stream_runner()
     try:
-        run_stream(config, stream_config_path or config.stream_config_path)
-    except StreamSettingsError as exc:
+        stream_runner.run_stream(
+            config, stream_config_path or config.stream_config_path
+        )
+    except stream_runner.StreamSettingsError as exc:
         raise click.ClickException(str(exc)) from exc
 
 
