@@ -1,6 +1,9 @@
 """Tests for the ObsForge command-line interface."""
 
+import subprocess
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -27,6 +30,36 @@ def test_help() -> None:
 
     assert result.exit_code == 0
     assert "Administrative command-line interface" in result.output
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ("--help",),
+        ("--version",),
+        ("process-stream", "--help"),
+    ],
+)
+def test_help_without_database_settings(
+    monkeypatch: pytest.MonkeyPatch, arguments: tuple[str, ...]
+) -> None:
+    monkeypatch.delenv("OBSFORGE_DATABASE_URL", raising=False)
+    monkeypatch.delenv("OBSFORGE_DATABASE_PASSWORD", raising=False)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from obsforge.cli import main_with_sentry; main_with_sentry()",
+            *arguments,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout
 
 
 def test_init(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -75,6 +108,72 @@ def test_init(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         ("initialize_database", True),
         ("stamp_database", alembic_config_path),
     ]
+
+
+def test_process_stream(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    stream_config_path = tmp_path / "streams.yaml"
+    stream_config_path.touch()
+    calls: list[tuple[Any, Path]] = []
+
+    def fake_run_stream(config: Any, path: Path) -> None:
+        calls.append((config, path))
+
+    fake_config = SimpleNamespace(stream_config_path=stream_config_path)
+    fake_stream_runner = SimpleNamespace(
+        run_stream=fake_run_stream,
+        StreamSettingsError=ValueError,
+    )
+    monkeypatch.setattr("obsforge.cli._get_config", lambda: fake_config)
+    monkeypatch.setattr(
+        "obsforge.cli._get_stream_runner", lambda: fake_stream_runner
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        ["process-stream", "--stream-config-path", str(stream_config_path)],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0
+    assert len(calls) == 1
+    assert calls[0][0] is fake_config
+    assert calls[0][1] == stream_config_path
+
+
+def test_process_stream_settings_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    stream_config_path = tmp_path / "streams.yaml"
+    stream_config_path.touch()
+
+    class FakeStreamSettingsError(ValueError):
+        pass
+
+    def fake_run_stream(config: Any, path: Path) -> None:
+        raise FakeStreamSettingsError("Invalid stream settings")
+
+    fake_config = SimpleNamespace(stream_config_path=stream_config_path)
+    fake_stream_runner = SimpleNamespace(
+        run_stream=fake_run_stream,
+        StreamSettingsError=FakeStreamSettingsError,
+    )
+    monkeypatch.setattr("obsforge.cli._get_config", lambda: fake_config)
+    monkeypatch.setattr(
+        "obsforge.cli._get_stream_runner", lambda: fake_stream_runner
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        ["process-stream", "--stream-config-path", str(stream_config_path)],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 1
+    assert result.output == "Error: Invalid stream settings\n"
 
 
 def test_update_schema(

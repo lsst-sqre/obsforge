@@ -127,17 +127,27 @@ The abort command must run while the queued arq job still exists, otherwise it r
 {"detail":"Queued job not found"}
 ```
 
-Stop the services when done:
+## Quix streams integration
+
+ObsForge can run Quix Streams pipelines defined as YAML files in
+`config/streams/`. It consumes Avro messages from Kafka, applies
+transformations, and writes the results to Alembic-managed PostgreSQL tables.
+The pipeline YAML also declares its Kafka consumer group, allowing each topic
+pipeline to scale independently while its replicas share a stable group.
+
+Install ObsForge and configure the connections:
 
 ```sh
-docker compose down
+uv sync
+export OBSFORGE_KAFKA_BROKER_ADDRESS=kafka.example:9093
+export OBSFORGE_KAFKA_USERNAME=obsforge
+export OBSFORGE_KAFKA_PASSWORD=...
+export OBSFORGE_SCHEMA_REGISTRY_URL=https://schema-registry.example
+export OBSFORGE_SCHEMA_REGISTRY_TOKEN=...
+obsforge process-stream \
+  --stream-config-path config/streams/scheduler-observatory-state.yaml
 ```
 
-To discard local Postgres data and start over, also remove the Compose volume:
-
-```sh
-docker compose down --volumes
-```
-
-The Compose stack is for interactive local development. The tox test harness
-is managed separately and should keep owning its own test services.
+Run the stream as a separate long-lived process from the API and arq worker.
+See the [Quix Streams integration](docs/quix-streams-integration.md)
+for schema ownership, deployment, evolution, and delivery decisions.

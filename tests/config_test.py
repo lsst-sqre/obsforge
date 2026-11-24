@@ -3,7 +3,7 @@
 from pathlib import Path
 
 import pytest
-from pydantic import HttpUrl, SecretStr
+from pydantic import HttpUrl, SecretStr, ValidationError
 
 from obsforge.config import Config
 
@@ -51,3 +51,24 @@ def test_worker_url_settings_resolve_from_raw_env_strings(
         str(settings.obscore_config)
         == "https://data.example.com/configs/prompt.yaml"
     )
+
+
+def test_stream_authentication_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test stream tokens are secret and Kafka requires a SASL transport."""
+    monkeypatch.setenv(
+        "OBSFORGE_DATABASE_URL", "postgresql://obsforge@localhost/obsdb"
+    )
+    monkeypatch.setenv("OBSFORGE_SCHEMA_REGISTRY_TOKEN", "registry-token")
+
+    settings = Config()
+
+    assert isinstance(settings.schema_registry_token, SecretStr)
+    assert settings.schema_registry_token.get_secret_value() == (
+        "registry-token"
+    )
+
+    monkeypatch.setenv("OBSFORGE_KAFKA_SECURITY_PROTOCOL", "plaintext")
+    with pytest.raises(ValidationError):
+        Config()
