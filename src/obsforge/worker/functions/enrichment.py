@@ -12,11 +12,25 @@ from pydantic import SecretStr
 from safir.dependencies.db_session import db_session_dependency
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from obsforge.adapters import DaxObsCoreAdapter
+from obsforge.adapters import (
+    ButlerAdapter,
+    ButlerVisitRecords,
+    DaxObsCoreAdapter,
+)
 from obsforge.config import config
-from obsforge.models import VisitRegistration
-from obsforge.services import EnrichmentJobService, ObsCoreService
-from obsforge.storage import EnrichmentJobStore, ObsCoreStore
+from obsforge.models import ObsCoreUpsert, VisitRegistration
+from obsforge.services import (
+    EnrichmentJobService,
+    ObsCoreService,
+    VisitDetectorService,
+    VisitService,
+)
+from obsforge.storage import (
+    EnrichmentJobStore,
+    ObsCoreStore,
+    VisitDetectorStore,
+    VisitStore,
+)
 
 __all__ = [
     "EnrichmentRetriesExhaustedError",
@@ -41,7 +55,7 @@ class MissingWorkerContextError(RuntimeError):
         if key:
             msg = f"Worker context missing {key!r}"
         else:
-            msg = "Worker context is required for ObsCore enrichment"
+            msg = "Worker context is required for visit enrichment"
         super().__init__(msg)
 
 
@@ -64,19 +78,21 @@ async def enrich_visit(
 ) -> None:
     """Run the actual visit enrichment workflow.
 
-    Retrieve ObsCore records for the registered visit and upsert them into
-    ObsDB.
+    Retrieve ObsCore, Visit, and VisitDetector records for the registered
+    visit and upsert them into ObsDB.
     """
     job = await EnrichmentJobStore(session).get(job_id)
     registration = VisitRegistration.model_validate(job.registration_payload)
     butler_access_token = cast(
         "SecretStr", _required_context_value(context, "butler_access_token")
     )
-    adapter = DaxObsCoreAdapter(
-        butler_factory=cast(
-            "LabeledButlerFactory",
-            _required_context_value(context, "labeled_butler_factory"),
-        ),
+    butler_factory = cast(
+        "LabeledButlerFactory",
+        _required_context_value(context, "labeled_butler_factory"),
+    )
+    access_token = butler_access_token.get_secret_value()
+    obscore_adapter = DaxObsCoreAdapter(
+        butler_factory=butler_factory,
         butler_label=config.butler_label,
         config=cast(
             "ExporterConfig",
@@ -86,11 +102,27 @@ async def enrich_visit(
             "str",
             _required_context_value(context, "obscore_dataset_type"),
         ),
-        access_token=butler_access_token.get_secret_value(),
+        access_token=access_token,
     )
-    records = await asyncio.to_thread(
-        lambda: list(adapter.iter_visit_records(registration))
+    butler_adapter = ButlerAdapter(
+        butler_factory=butler_factory,
+        butler_label=config.butler_label,
+        access_token=access_token,
     )
+
+    def fetch_records() -> tuple[list[ObsCoreUpsert], ButlerVisitRecords]:
+        obscore_records = list(
+            obscore_adapter.iter_visit_records(registration)
+        )
+        visit_records = butler_adapter.fetch_visit_records(registration)
+        return obscore_records, visit_records
+
+    records, visit_records = await asyncio.to_thread(fetch_records)
+
+    visit_service = VisitService(VisitStore(session))
+    await visit_service.upsert(visit_records.visit)
+    detector_service = VisitDetectorService(VisitDetectorStore(session))
+    await detector_service.upsert_many(visit_records.detectors)
     obscore_service = ObsCoreService(ObsCoreStore(session))
     await obscore_service.upsert_many(records)
 

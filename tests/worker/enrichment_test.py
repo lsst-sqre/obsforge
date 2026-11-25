@@ -13,8 +13,16 @@ from safir.dependencies.db_session import db_session_dependency
 from sqlalchemy.ext.asyncio import AsyncSession
 from structlog.testing import capture_logs
 
-from obsforge.adapters import MissingObsCoreDatasetError
+from obsforge.adapters import (
+    ButlerVisitRecords,
+    MissingObsCoreDatasetError,
+    VisitNotFoundInDatasetError,
+)
 from obsforge.config import config
+from obsforge.exceptions import (
+    UnknownObsCoreRecordError,
+    UnknownVisitRecordError,
+)
 from obsforge.models import ObsCoreUpsert, VisitRegistration
 from obsforge.schema import EnrichmentJobPhase
 from obsforge.services import ObsCoreService
@@ -22,12 +30,36 @@ from obsforge.storage import (
     DuplicateObsCoreBatchError,
     EnrichmentJobStore,
     ObsCoreStore,
+    VisitDetectorStore,
+    VisitStore,
 )
 from obsforge.worker import main as worker_main
 from obsforge.worker.functions import enrichment
 from obsforge.worker.main import WorkerSettings
-from tests.support.obscore import make_obscore_upsert
+from tests.support.obscore import DATASET_ID, make_obscore_upsert
 from tests.support.registration import make_visit_registration
+from tests.support.visit import make_visit_detector_upsert, make_visit_upsert
+
+
+def make_enrichment_registration(visit: int) -> VisitRegistration:
+    """Make a registration containing every required dataset type."""
+    return make_visit_registration(
+        visit=visit,
+        datasets=[
+            {
+                "dataset_type": "preliminary_visit_image",
+                "id": DATASET_ID,
+            },
+            {
+                "dataset_type": "visit_table",
+                "id": "01a1b340-154e-7fce-b26c-b671f660788f",
+            },
+            {
+                "dataset_type": "visit_detector_table",
+                "id": "01a1b340-154e-7fce-b26c-b671f6607890",
+            },
+        ],
+    )
 
 
 @pytest.mark.asyncio
@@ -36,6 +68,7 @@ async def test_run_enrichment_marks_completed(
 ) -> None:
     """Test a successful worker job."""
     adapter_instances: list[Any] = []
+    butler_adapter_instances: list[Any] = []
     batch_calls: list[list[str]] = []
     real_obscore_service = ObsCoreService
 
@@ -83,12 +116,48 @@ async def test_run_enrichment_marks_completed(
             batch_calls.append([record.obs_id for record in records])
             return await self._delegate.upsert_many(records)
 
+    class FakeButlerAdapter:
+        def __init__(
+            self,
+            *,
+            butler_factory: Any,
+            butler_label: str,
+            access_token: str,
+        ) -> None:
+            self.butler_factory = butler_factory
+            self.butler_label = butler_label
+            self.access_token = access_token
+            self.registration: VisitRegistration | None = None
+            butler_adapter_instances.append(self)
+
+        def fetch_visit_records(
+            self, registration: VisitRegistration
+        ) -> ButlerVisitRecords:
+            self.registration = registration
+            visit = make_visit_upsert(
+                visitId=registration.visit, visit=registration.visit
+            )
+            detectors = [
+                make_visit_detector_upsert(
+                    detectorId=registration.visit * 100 + 1,
+                    visitId=registration.visit,
+                    detector=1,
+                ),
+                make_visit_detector_upsert(
+                    detectorId=registration.visit * 100 + 2,
+                    visitId=registration.visit,
+                    detector=2,
+                ),
+            ]
+            return ButlerVisitRecords(visit=visit, detectors=detectors)
+
     store = EnrichmentJobStore(db_session)
     created = await store.add_or_get(
-        make_visit_registration(visit=20260327123456)
+        make_enrichment_registration(visit=20260327123456)
     )
     await store.mark_queued(created.id)
     monkeypatch.setattr(enrichment, "DaxObsCoreAdapter", FakeDaxObsCoreAdapter)
+    monkeypatch.setattr(enrichment, "ButlerAdapter", FakeButlerAdapter)
     monkeypatch.setattr(enrichment, "ObsCoreService", SpyObsCoreService)
 
     await enrichment.run_enrichment(
@@ -110,8 +179,14 @@ async def test_run_enrichment_marks_completed(
     assert adapter_instances[0].butler_label == config.butler_label
     assert adapter_instances[0].dataset_type == "preliminary_visit_image"
     assert adapter_instances[0].access_token == "worker-token"
-    assert adapter_instances[0].registration == make_visit_registration(
+    assert adapter_instances[0].registration == make_enrichment_registration(
         visit=20260327123456
+    )
+    assert len(butler_adapter_instances) == 1
+    assert butler_adapter_instances[0].butler_label == config.butler_label
+    assert butler_adapter_instances[0].access_token == "worker-token"
+    assert butler_adapter_instances[0].registration == (
+        make_enrichment_registration(visit=20260327123456)
     )
 
     dataset_id = str(created.registration_payload["datasets"][0]["id"])
@@ -124,6 +199,87 @@ async def test_run_enrichment_marks_completed(
     assert first.lsst_detector == 125
     assert second.obs_id == obs_ids[1]
     assert second.lsst_detector == 126
+    visit = await VisitStore(db_session).get_by_visit_id(20260327123456)
+    assert visit.visit == 20260327123456
+    detectors = await VisitDetectorStore(db_session).get_by_visit_id(
+        20260327123456
+    )
+    assert [detector.detector for detector in detectors] == [1, 2]
+
+
+@pytest.mark.asyncio
+async def test_enrich_visit_is_idempotent(
+    app: FastAPI, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test repeated enrichment updates the same database identities."""
+    enrichment_number = 0
+
+    class FakeDaxObsCoreAdapter:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        def iter_visit_records(
+            self, registration: VisitRegistration
+        ) -> Iterator[ObsCoreUpsert]:
+            nonlocal enrichment_number
+            enrichment_number += 1
+            band = "g" if enrichment_number == 1 else "r"
+            yield make_obscore_upsert(
+                obs_id="idempotent-obscore",
+                lsst_visit=registration.visit,
+                lsst_band=band,
+            )
+
+    class FakeButlerAdapter:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        def fetch_visit_records(
+            self, registration: VisitRegistration
+        ) -> ButlerVisitRecords:
+            band = "g" if enrichment_number == 1 else "r"
+            return ButlerVisitRecords(
+                visit=make_visit_upsert(
+                    visitId=registration.visit,
+                    visit=registration.visit,
+                    physical_filter=f"{band}_1",
+                    band=band,
+                ),
+                detectors=[
+                    make_visit_detector_upsert(
+                        detectorId=registration.visit * 100 + 1,
+                        visitId=registration.visit,
+                        detector=1,
+                        seeing=0.7 if enrichment_number == 1 else 0.8,
+                    )
+                ],
+            )
+
+    registration = make_enrichment_registration(20260327111111)
+    job = await EnrichmentJobStore(db_session).add_or_get(registration)
+    monkeypatch.setattr(enrichment, "DaxObsCoreAdapter", FakeDaxObsCoreAdapter)
+    monkeypatch.setattr(enrichment, "ButlerAdapter", FakeButlerAdapter)
+    context = {
+        "labeled_butler_factory": object(),
+        "obscore_config": object(),
+        "obscore_dataset_type": "preliminary_visit_image",
+        "butler_access_token": SecretStr("worker-token"),
+    }
+
+    await enrichment.enrich_visit(job.id, session=db_session, context=context)
+    await enrichment.enrich_visit(job.id, session=db_session, context=context)
+
+    obscore = await ObsCoreStore(db_session).get_by_obs_id(
+        "idempotent-obscore"
+    )
+    assert obscore.lsst_band == "r"
+    visit = await VisitStore(db_session).get_by_visit_id(registration.visit)
+    assert visit.band == "r"
+    detectors = await VisitDetectorStore(db_session).get_by_visit_id(
+        registration.visit
+    )
+    assert len(detectors) == 1
+    assert detectors[0].seeing == pytest.approx(0.8)
 
 
 @pytest.mark.asyncio
@@ -236,6 +392,65 @@ async def test_run_enrichment_marks_failed_on_missing_obscore_dataset(
 
 
 @pytest.mark.asyncio
+async def test_missing_visit_rows_fail_before_writes(
+    app: FastAPI, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Test table validation completes before any database upsert."""
+
+    class FakeDaxObsCoreAdapter:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        def iter_visit_records(
+            self, registration: VisitRegistration
+        ) -> Iterator[ObsCoreUpsert]:
+            yield make_obscore_upsert(obs_id=str(registration.datasets[0].id))
+
+    class FakeButlerAdapter:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        def fetch_visit_records(
+            self, registration: VisitRegistration
+        ) -> ButlerVisitRecords:
+            raise VisitNotFoundInDatasetError(
+                registration.visit, "visit_detector_table"
+            )
+
+    registration = make_enrichment_registration(20260327654321)
+    store = EnrichmentJobStore(db_session)
+    created = await store.add_or_get(registration)
+    await store.mark_queued(created.id)
+    monkeypatch.setattr(enrichment, "DaxObsCoreAdapter", FakeDaxObsCoreAdapter)
+    monkeypatch.setattr(enrichment, "ButlerAdapter", FakeButlerAdapter)
+
+    with pytest.raises(VisitNotFoundInDatasetError):
+        await enrichment.run_enrichment(
+            {
+                "logger": structlog.get_logger("test"),
+                "labeled_butler_factory": object(),
+                "obscore_config": object(),
+                "obscore_dataset_type": "preliminary_visit_image",
+                "butler_access_token": SecretStr("worker-token"),
+            },
+            created.id,
+        )
+
+    seen = await store.get(created.id)
+    assert seen.phase == EnrichmentJobPhase.ERROR
+    assert seen.error_code == "VisitNotFoundInDatasetError"
+    assert seen.error_message == (
+        "Visit 20260327654321 not found in visit_detector_table dataset"
+    )
+    with pytest.raises(UnknownVisitRecordError):
+        await VisitStore(db_session).get_by_visit_id(registration.visit)
+    with pytest.raises(UnknownObsCoreRecordError):
+        await ObsCoreStore(db_session).get_by_obs_id(
+            str(registration.datasets[0].id)
+        )
+
+
+@pytest.mark.asyncio
 async def test_run_enrichment_marks_failed_on_duplicate_obscore_batch(
     app: FastAPI, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -260,12 +475,32 @@ async def test_run_enrichment_marks_failed_on_duplicate_obscore_batch(
             yield make_obscore_upsert(obs_id=dataset_id)
             yield make_obscore_upsert(obs_id=dataset_id)
 
+    class FakeButlerAdapter:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        def fetch_visit_records(
+            self, registration: VisitRegistration
+        ) -> ButlerVisitRecords:
+            return ButlerVisitRecords(
+                visit=make_visit_upsert(
+                    visitId=registration.visit, visit=registration.visit
+                ),
+                detectors=[
+                    make_visit_detector_upsert(
+                        detectorId=registration.visit * 100 + 1,
+                        visitId=registration.visit,
+                    )
+                ],
+            )
+
     store = EnrichmentJobStore(db_session)
     created = await store.add_or_get(
-        make_visit_registration(visit=20260327654321)
+        make_enrichment_registration(visit=20260327654321)
     )
     await store.mark_queued(created.id)
     monkeypatch.setattr(enrichment, "DaxObsCoreAdapter", FakeDaxObsCoreAdapter)
+    monkeypatch.setattr(enrichment, "ButlerAdapter", FakeButlerAdapter)
 
     with pytest.raises(DuplicateObsCoreBatchError, match="duplicate obs_id"):
         await enrichment.run_enrichment(

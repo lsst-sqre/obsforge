@@ -19,7 +19,7 @@ __all__ = ["WorkerSettings", "shutdown", "startup"]
 
 
 class _WorkerObsCoreSettings(BaseModel):
-    """Required settings for worker ObsCore enrichment."""
+    """Required settings for worker Butler enrichment."""
 
     butler_repository: HttpUrl | Path
     butler_access_token: SecretStr
@@ -41,7 +41,7 @@ def _initialize_obscore_context(
     ctx["obscore_dataset_type"] = config.obscore_dataset_type
     ctx["butler_access_token"] = settings.butler_access_token
     logger.info(
-        "Initialized ObsCore enrichment resources",
+        "Initialized Butler enrichment resources",
         butler_label=config.butler_label,
         obscore_dataset_type=config.obscore_dataset_type,
     )
