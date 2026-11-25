@@ -15,10 +15,16 @@ __all__ = [
     "ObsCoreUpsert",
     "SerializedEnrichmentJob",
     "SerializedObsCore",
+    "SerializedVisit",
+    "SerializedVisitDetector",
     "StoredEnrichmentJob",
     "VisitDataset",
+    "VisitDetectorRecord",
+    "VisitDetectorUpsert",
+    "VisitRecord",
     "VisitRegistration",
     "VisitTimespan",
+    "VisitUpsert",
 ]
 
 
@@ -188,3 +194,122 @@ class ObsCoreUpsert(ObsCoreRecord):
 
 class SerializedObsCore(ObsCoreRecord):
     """Serializable representation of one ObsCore row."""
+
+
+class VisitRecord(BaseModel):
+    """Complete Visit record."""
+
+    visitId: int
+    visit: int
+    physical_filter: str | None = Field(None, max_length=4)
+    band: str | None = Field(None, max_length=1)
+    ra: float | None = None
+    dec: float | None = None
+    decl: float | None = None
+    skyRotation: float | None = None
+    azimuth: float | None = None
+    altitude: float | None = None
+    zenithDistance: float | None = None
+    airmass: float | None = None
+    expTime: float | None = None
+    expMidpt: datetime | None = None
+    expMidptMJD: float | None = None
+    obsStart: datetime | None = None
+    obsStartMJD: float | None = None
+
+
+class VisitUpsert(VisitRecord):
+    """Visit record supplied for database upsert."""
+
+
+class SerializedVisit(VisitRecord):
+    """Serializable representation of one Visit row."""
+
+
+class VisitDetectorRecord(BaseModel):
+    """Complete VisitDetector record."""
+
+    detectorId: int
+    visitId: int
+    physical_filter: str | None = Field(None, max_length=32)
+    band: str | None = Field(None, max_length=32)
+    ra: float | None = None
+    dec: float | None = None
+    pixelScale: float | None = None
+    zenithDistance: float | None = None
+    expTime: float | None = None
+    zeroPoint: float | None = None
+    psfSigma: float | None = None
+    psfArea: float | None = None
+    psfIxx: float | None = None
+    psfIyy: float | None = None
+    psfIxy: float | None = None
+    skyBg: float | None = None
+    skyNoise: float | None = None
+    psfAdaptiveThresholdValue: float | None = None
+    psfAdaptiveIncludeThresholdMultiplier: float | None = None
+    nShapeletsStar: int | None = None
+    shapeletsOnlyIqScore: float | None = None
+    shapeletsIqScore: float | None = None
+    centroidDiffShapeletsVsSlotMedian: float | None = None
+    shapeletsStarEMedian: float | None = None
+    shapeletsStarUnNormalizedEMedian: float | None = None
+    refCatSourceDensity: float | None = None
+    astromOffsetMean: float | None = None
+    astromOffsetStd: float | None = None
+    nPsfStar: int | None = None
+    psfStarDeltaE1Median: float | None = None
+    psfStarDeltaE2Median: float | None = None
+    psfStarDeltaE1Scatter: float | None = None
+    psfStarDeltaE2Scatter: float | None = None
+    psfStarDeltaSizeMedian: float | None = None
+    psfStarDeltaSizeScatter: float | None = None
+    psfStarScaledDeltaSizeScatter: float | None = None
+    psfTraceRadiusDelta: float | None = None
+    psfApFluxDelta: float | None = None
+    psfApCorrSigmaScaledDelta: float | None = None
+    maxDistToNearestPsf: float | None = None
+    starEMedian: float | None = None
+    starUnNormalizedEMedian: float | None = None
+    starComa1Median: float | None = None
+    starComa2Median: float | None = None
+    starTrefoil1Median: float | None = None
+    starTrefoil2Median: float | None = None
+    starKurtosisMedian: float | None = None
+    starE41Median: float | None = None
+    starE42Median: float | None = None
+    effTime: float | None = None
+    effTimePsfSigmaScale: float | None = None
+    effTimeSkyBgScale: float | None = None
+    effTimeZeroPointScale: float | None = None
+    magLim: float | None = None
+    decl: float | None = None
+    ccdVisitId: int | None = None
+    detector: int
+    seeing: float | None = None
+    skyRotation: float | None = None
+    expMidpt: datetime | None = None
+    expMidptMJD: float | None = None
+    obsStart: datetime | None = None
+    obsStartMJD: float | None = None
+    darkTime: float | None = None
+    xSize: int | None = None
+    ySize: int | None = None
+    llcra: float | None = None
+    llcdec: float | None = None
+    ulcra: float | None = None
+    ulcdec: float | None = None
+    urcra: float | None = None
+    urcdec: float | None = None
+    lrcra: float | None = None
+    lrcdec: float | None = None
+    wcsPreliminaryDetectorPointingResidual: float | None = None
+    wcsPreliminaryVisitPointingResidual: float | None = None
+
+
+class VisitDetectorUpsert(VisitDetectorRecord):
+    """VisitDetector record supplied for database upsert."""
+
+
+class SerializedVisitDetector(VisitDetectorRecord):
+    """Serializable representation of one VisitDetector row."""

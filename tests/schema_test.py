@@ -9,10 +9,14 @@ import pytest
 from safir.database import create_database_engine, drop_database
 from sqlalchemy import (
     DDL,
+    DOUBLE_PRECISION,
+    REAL,
     BigInteger,
     DateTime,
     Float,
+    ForeignKeyConstraint,
     Integer,
+    String,
     Table,
     Text,
     UniqueConstraint,
@@ -28,6 +32,8 @@ from obsforge.schema import (
     ObsCore,
     SchedulerObservatoryState,
     SchemaBase,
+    Visit,
+    VisitDetector,
 )
 
 
@@ -246,6 +252,185 @@ def test_obscore_column_info() -> None:
         "description": "Identifier for CCD within the LSSTCam focal plane",
         "ucd": "meta.id;instr.det",
     }
+
+
+def test_visit_tables_registered() -> None:
+    assert SchemaBase.metadata.tables["Visit"] is Visit.__table__
+    assert (
+        SchemaBase.metadata.tables["VisitDetector"] is VisitDetector.__table__
+    )
+
+
+def test_visit_columns_and_types() -> None:
+    columns = Visit.__table__.columns
+    assert set(columns.keys()) == {
+        "visitId",
+        "visit",
+        "physical_filter",
+        "band",
+        "ra",
+        "dec",
+        "decl",
+        "skyRotation",
+        "azimuth",
+        "altitude",
+        "zenithDistance",
+        "airmass",
+        "expTime",
+        "expMidpt",
+        "expMidptMJD",
+        "obsStart",
+        "obsStartMJD",
+    }
+    assert columns["visitId"].primary_key is True
+    assert isinstance(columns["visitId"].type, BigInteger)
+    assert isinstance(columns["visit"].type, BigInteger)
+    assert isinstance(columns["ra"].type, DOUBLE_PRECISION)
+    assert isinstance(columns["expMidpt"].type, DateTime)
+    assert columns["expMidpt"].type.timezone is False
+    assert isinstance(columns["physical_filter"].type, String)
+    assert columns["physical_filter"].type.length == 4
+    assert isinstance(columns["band"].type, String)
+    assert columns["band"].type.length == 1
+    required = {"visitId", "visit"}
+    for name, column in columns.items():
+        assert column.nullable is (name not in required)
+
+
+def test_visit_detector_columns_and_types() -> None:
+    columns = VisitDetector.__table__.columns
+    assert set(columns.keys()) == {
+        "detectorId",
+        "visitId",
+        "physical_filter",
+        "band",
+        "ra",
+        "dec",
+        "pixelScale",
+        "zenithDistance",
+        "expTime",
+        "zeroPoint",
+        "psfSigma",
+        "psfArea",
+        "psfIxx",
+        "psfIyy",
+        "psfIxy",
+        "skyBg",
+        "skyNoise",
+        "psfAdaptiveThresholdValue",
+        "psfAdaptiveIncludeThresholdMultiplier",
+        "nShapeletsStar",
+        "shapeletsOnlyIqScore",
+        "shapeletsIqScore",
+        "centroidDiffShapeletsVsSlotMedian",
+        "shapeletsStarEMedian",
+        "shapeletsStarUnNormalizedEMedian",
+        "refCatSourceDensity",
+        "astromOffsetMean",
+        "astromOffsetStd",
+        "nPsfStar",
+        "psfStarDeltaE1Median",
+        "psfStarDeltaE2Median",
+        "psfStarDeltaE1Scatter",
+        "psfStarDeltaE2Scatter",
+        "psfStarDeltaSizeMedian",
+        "psfStarDeltaSizeScatter",
+        "psfStarScaledDeltaSizeScatter",
+        "psfTraceRadiusDelta",
+        "psfApFluxDelta",
+        "psfApCorrSigmaScaledDelta",
+        "maxDistToNearestPsf",
+        "starEMedian",
+        "starUnNormalizedEMedian",
+        "starComa1Median",
+        "starComa2Median",
+        "starTrefoil1Median",
+        "starTrefoil2Median",
+        "starKurtosisMedian",
+        "starE41Median",
+        "starE42Median",
+        "effTime",
+        "effTimePsfSigmaScale",
+        "effTimeSkyBgScale",
+        "effTimeZeroPointScale",
+        "magLim",
+        "decl",
+        "ccdVisitId",
+        "detector",
+        "seeing",
+        "skyRotation",
+        "expMidpt",
+        "expMidptMJD",
+        "obsStart",
+        "obsStartMJD",
+        "darkTime",
+        "xSize",
+        "ySize",
+        "llcra",
+        "llcdec",
+        "ulcra",
+        "ulcdec",
+        "urcra",
+        "urcdec",
+        "lrcra",
+        "lrcdec",
+        "wcsPreliminaryDetectorPointingResidual",
+        "wcsPreliminaryVisitPointingResidual",
+    }
+    assert columns["detectorId"].primary_key is True
+    assert isinstance(columns["detectorId"].type, BigInteger)
+    assert isinstance(columns["visitId"].type, BigInteger)
+    assert isinstance(columns["nPsfStar"].type, Integer)
+    assert isinstance(columns["pixelScale"].type, REAL)
+    assert isinstance(columns["decl"].type, DOUBLE_PRECISION)
+    assert isinstance(columns["physical_filter"].type, String)
+    assert columns["physical_filter"].type.length == 32
+    assert isinstance(columns["band"].type, String)
+    assert columns["band"].type.length == 32
+    assert isinstance(columns["expMidpt"].type, DateTime)
+    assert columns["expMidpt"].type.timezone is False
+    required = {"detectorId", "visitId", "detector"}
+    for name, column in columns.items():
+        assert column.nullable is (name not in required)
+
+
+def test_visit_constraints_and_indexes() -> None:
+    visit_table = cast("Table", Visit.__table__)
+    visit_uniques = {
+        constraint.name: constraint
+        for constraint in visit_table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    assert {
+        column.name for column in visit_uniques["visit_visit_key"].columns
+    } == {"visit"}
+
+    detector_table = cast("Table", VisitDetector.__table__)
+    detector_uniques = {
+        constraint.name: constraint
+        for constraint in detector_table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    assert {
+        column.name
+        for column in detector_uniques[
+            "visit_detector_visit_detector_key"
+        ].columns
+    } == {"visitId", "detector"}
+    foreign_keys = [
+        constraint
+        for constraint in detector_table.constraints
+        if isinstance(constraint, ForeignKeyConstraint)
+    ]
+    assert len(foreign_keys) == 1
+    assert [
+        element.target_fullname for element in foreign_keys[0].elements
+    ] == ["Visit.visitId"]
+    assert {index.name for index in detector_table.indexes} == {
+        "visit_detector_by_visit_id"
+    }
+    visit_index = next(iter(detector_table.indexes))
+    assert [column.name for column in visit_index.columns] == ["visitId"]
 
 
 def test_scheduler_observatory_state_schema() -> None:

@@ -146,6 +146,10 @@ extend = "ruff-shared.toml"
 [tool.ruff.lint.isort]
 known-first-party = ["obsforge", "tests"]
 
+[tool.ruff.lint.extend-per-file-ignores]
+"src/obsforge/models.py" = ["N815"]
+"src/obsforge/schema/visit.py" = ["N815"]
+
 [tool.scriv]
 categories = [
     "Backwards-incompatible changes",
