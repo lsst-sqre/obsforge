@@ -28,8 +28,8 @@ export OBSFORGE_ALEMBIC_CONFIG_PATH=./alembic.ini
 ```
 
 The FastAPI app can register jobs with only Postgres and Redis configured. To
-run the worker and populate ObsCore rows, also configure the Prompt Butler
-repository and the ObsCore exporter config:
+run the worker and populate ObsCore, Visit, and VisitDetector rows, also
+configure the Prompt Butler repository and the ObsCore exporter config:
 
 ```sh
 export OBSFORGE_BUTLER_LABEL=prompt
@@ -79,6 +79,14 @@ PAYLOAD='{
     {
       "dataset_type": "preliminary_visit_image",
       "id": "019ba0a6-0173-765f-bf27-56884ff9342a"
+    },
+    {
+      "dataset_type": "visit_table",
+      "id": "01a1b340-154e-7fce-b26c-b671f660788f"
+    },
+    {
+      "dataset_type": "visit_detector_table",
+      "id": "01a1b340-154e-7fce-b26c-b671f6607890"
     }
   ],
   "timespan": {
@@ -104,7 +112,11 @@ curl -sS "$BASE/jobs/$JOB_ID" | jq .
 The `datasets` entries are persisted in the job's `registration_payload`.
 During enrichment, the worker selects entries whose `dataset_type` matches
 `OBSFORGE_OBSCORE_DATASET_TYPE`, uses their UUIDs to constrain
-`lsst.dax.obscore`, and upserts the returned ObsCore records into ObsDB.
+`lsst.dax.obscore`, and upserts the returned ObsCore records into ObsDB. The
+same registration must contain exactly one `visit_table` UUID and one
+`visit_detector_table` UUID. The worker loads those Astropy tables by UUID,
+selects rows matching the registered `visit`, and upserts the Visit and
+VisitDetector records.
 
 Registering the same `instrument` and `visit` pair again is idempotent:
 
