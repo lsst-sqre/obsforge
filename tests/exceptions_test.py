@@ -8,6 +8,8 @@ from obsforge.exceptions import (
     UnknownEnrichmentJobError,
     UnknownEnrichmentJobVisitError,
     UnknownObsCoreRecordError,
+    UnknownVisitDetectorRecordError,
+    UnknownVisitRecordError,
 )
 from obsforge.schema import EnrichmentJobPhase
 
@@ -45,6 +47,28 @@ def test_unknown_obscore_record_error() -> None:
     assert error.to_dict() == {
         "msg": "Unknown ObsCore record ivo://rubin.example/obs/42",
         "type": "unknown_obscore_record",
+    }
+
+
+def test_unknown_visit_record_error() -> None:
+    error = UnknownVisitRecordError(2026010800095)
+
+    assert isinstance(error, ClientRequestError)
+    assert error.status_code == status.HTTP_404_NOT_FOUND
+    assert error.to_dict() == {
+        "msg": "Unknown Visit record 2026010800095",
+        "type": "unknown_visit_record",
+    }
+
+
+def test_unknown_visit_detector_record_error() -> None:
+    error = UnknownVisitDetectorRecordError(2026010800095001)
+
+    assert isinstance(error, ClientRequestError)
+    assert error.status_code == status.HTTP_404_NOT_FOUND
+    assert error.to_dict() == {
+        "msg": "Unknown VisitDetector record 2026010800095001",
+        "type": "unknown_visit_detector_record",
     }
 
 

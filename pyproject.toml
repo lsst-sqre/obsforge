@@ -149,6 +149,7 @@ known-first-party = ["obsforge", "tests"]
 [tool.ruff.lint.extend-per-file-ignores]
 "src/obsforge/models.py" = ["N815"]
 "src/obsforge/schema/visit.py" = ["N815"]
+"tests/support/visit.py" = ["DTZ001"]
 
 [tool.scriv]
 categories = [
