@@ -31,18 +31,24 @@ class ObsCoreStore:
     @retry_async_transaction
     async def upsert(self, record: ObsCoreUpsert) -> SerializedObsCore:
         """Insert or update one ObsCore record by observation ID."""
-        stmt = self._upsert_statement([record.model_dump()])
         async with self._session.begin():
-            obscore: SQLObsCore = (
-                await self._session.execute(stmt)
-            ).scalar_one()
-            return self._serialize(obscore)
+            rows = await self.upsert_many_in_transaction([record])
+            return rows[0]
 
     @retry_async_transaction
     async def upsert_many(
         self, records: Sequence[ObsCoreUpsert]
     ) -> list[SerializedObsCore]:
         """Insert or update multiple ObsCore records in one transaction."""
+        if not records:
+            return []
+        async with self._session.begin():
+            return await self.upsert_many_in_transaction(records)
+
+    async def upsert_many_in_transaction(
+        self, records: Sequence[ObsCoreUpsert]
+    ) -> list[SerializedObsCore]:
+        """Upsert ObsCore records within a transaction opened by the caller."""
         records = list(records)
         if not records:
             return []
@@ -54,10 +60,9 @@ class ObsCoreStore:
         stmt = self._upsert_statement(
             [record.model_dump() for record in records]
         )
-        async with self._session.begin():
-            rows: Sequence[SQLObsCore] = (
-                (await self._session.execute(stmt)).scalars().all()
-            )
+        rows: Sequence[SQLObsCore] = (
+            (await self._session.execute(stmt)).scalars().all()
+        )
 
         rows_by_obs_id = {row.obs_id: self._serialize(row) for row in rows}
         return [rows_by_obs_id[obs_id] for obs_id in obs_ids]

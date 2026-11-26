@@ -19,18 +19,8 @@ from obsforge.adapters import (
 )
 from obsforge.config import config
 from obsforge.models import ObsCoreUpsert, VisitRegistration
-from obsforge.services import (
-    EnrichmentJobService,
-    ObsCoreService,
-    VisitDetectorService,
-    VisitService,
-)
-from obsforge.storage import (
-    EnrichmentJobStore,
-    ObsCoreStore,
-    VisitDetectorStore,
-    VisitStore,
-)
+from obsforge.services import EnrichmentJobService
+from obsforge.storage import EnrichmentJobStore, EnrichmentOutputStore
 
 __all__ = [
     "EnrichmentRetriesExhaustedError",
@@ -119,12 +109,9 @@ async def enrich_visit(
 
     records, visit_records = await asyncio.to_thread(fetch_records)
 
-    visit_service = VisitService(VisitStore(session))
-    await visit_service.upsert(visit_records.visit)
-    detector_service = VisitDetectorService(VisitDetectorStore(session))
-    await detector_service.upsert_many(visit_records.detectors)
-    obscore_service = ObsCoreService(ObsCoreStore(session))
-    await obscore_service.upsert_many(records)
+    await EnrichmentOutputStore(session).write(
+        visit_records.visit, visit_records.detectors, records
+    )
 
 
 async def run_enrichment(ctx: dict[Any, Any], job_id: int) -> None:

@@ -47,6 +47,13 @@ class VisitStore:
     @retry_async_transaction
     async def upsert(self, record: VisitUpsert) -> SerializedVisit:
         """Insert or update a Visit record for an instrument and visit ID."""
+        async with self._session.begin():
+            return await self.upsert_in_transaction(record)
+
+    async def upsert_in_transaction(
+        self, record: VisitUpsert
+    ) -> SerializedVisit:
+        """Upsert a Visit record within a transaction opened by the caller."""
         values = record.model_dump()
         insert_stmt = insert(SQLVisit).values(values)
         stmt = insert_stmt.on_conflict_do_update(
@@ -57,9 +64,8 @@ class VisitStore:
                 if key not in {"instrument", "visitId"}
             },
         ).returning(SQLVisit)
-        async with self._session.begin():
-            visit: SQLVisit = (await self._session.execute(stmt)).scalar_one()
-            return self._serialize(visit)
+        visit: SQLVisit = (await self._session.execute(stmt)).scalar_one()
+        return self._serialize(visit)
 
     async def get_by_visit_id(
         self, instrument: str, visit_id: int
@@ -89,18 +95,24 @@ class VisitDetectorStore:
         self, record: VisitDetectorUpsert
     ) -> SerializedVisitDetector:
         """Upsert a record by instrument, visit ID, and detector ID."""
-        stmt = self._upsert_statement([record.model_dump()])
         async with self._session.begin():
-            detector: SQLVisitDetector = (
-                await self._session.execute(stmt)
-            ).scalar_one()
-            return self._serialize(detector)
+            detectors = await self.upsert_many_in_transaction([record])
+            return detectors[0]
 
     @retry_async_transaction
     async def upsert_many(
         self, records: Sequence[VisitDetectorUpsert]
     ) -> list[SerializedVisitDetector]:
         """Insert or update detector records in one transaction."""
+        if not records:
+            return []
+        async with self._session.begin():
+            return await self.upsert_many_in_transaction(records)
+
+    async def upsert_many_in_transaction(
+        self, records: Sequence[VisitDetectorUpsert]
+    ) -> list[SerializedVisitDetector]:
+        """Upsert detector records using the caller's transaction."""
         records = list(records)
         if not records:
             return []
@@ -109,17 +121,14 @@ class VisitDetectorStore:
         stmt = self._upsert_statement(
             [record.model_dump() for record in records]
         )
-        async with self._session.begin():
-            rows: Sequence[SQLVisitDetector] = (
-                (await self._session.execute(stmt)).scalars().all()
-            )
+        rows: Sequence[SQLVisitDetector] = (
+            (await self._session.execute(stmt)).scalars().all()
+        )
 
-            rows_by_key = {
-                (row.instrument, row.visitId, row.detectorId): self._serialize(
-                    row
-                )
-                for row in rows
-            }
+        rows_by_key = {
+            (row.instrument, row.visitId, row.detectorId): self._serialize(row)
+            for row in rows
+        }
         return [
             rows_by_key[record.instrument, record.visitId, record.detectorId]
             for record in records
