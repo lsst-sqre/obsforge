@@ -12,6 +12,7 @@ from obsforge.exceptions import (
     UnknownVisitRecordError,
 )
 from obsforge.schema import EnrichmentJobPhase
+from tests.support.visit import DETECTOR_ID, VISIT_ID
 
 
 def test_unknown_enrichment_job_error() -> None:
@@ -51,23 +52,23 @@ def test_unknown_obscore_record_error() -> None:
 
 
 def test_unknown_visit_record_error() -> None:
-    error = UnknownVisitRecordError(2026010800095)
+    error = UnknownVisitRecordError(VISIT_ID)
 
     assert isinstance(error, ClientRequestError)
     assert error.status_code == status.HTTP_404_NOT_FOUND
     assert error.to_dict() == {
-        "msg": "Unknown Visit record 2026010800095",
+        "msg": f"Unknown Visit record {VISIT_ID}",
         "type": "unknown_visit_record",
     }
 
 
 def test_unknown_visit_detector_record_error() -> None:
-    error = UnknownVisitDetectorRecordError(2026010800095001)
+    error = UnknownVisitDetectorRecordError(DETECTOR_ID)
 
     assert isinstance(error, ClientRequestError)
     assert error.status_code == status.HTTP_404_NOT_FOUND
     assert error.to_dict() == {
-        "msg": "Unknown VisitDetector record 2026010800095001",
+        "msg": f"Unknown VisitDetector record {DETECTOR_ID}",
         "type": "unknown_visit_detector_record",
     }
 

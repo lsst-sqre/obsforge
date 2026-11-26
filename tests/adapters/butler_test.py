@@ -19,9 +19,17 @@ from obsforge.adapters import (
     InvalidButlerTableError,
     VisitNotFoundInDatasetError,
 )
+from obsforge.models import VisitDetectorUpsert, VisitUpsert
 from tests.support.registration import make_visit_registration
+from tests.support.visit import (
+    CCD_VISIT_ID,
+    DETECTOR_ID,
+    SECOND_DETECTOR_ID,
+    VISIT_ID,
+    make_visit_detector_table,
+    make_visit_table,
+)
 
-VISIT_ID = 2026010800095
 VISIT_DATASET_ID = UUID("01a1b340-154e-7fce-b26c-b671f660788f")
 DETECTOR_DATASET_ID = UUID("01a1b340-154e-7fce-b26c-b671f6607890")
 
@@ -75,47 +83,6 @@ class FakeButlerFactory:
         return self.butler
 
 
-def make_visit_table(*, visit_ids: list[int] | None = None) -> Table:
-    """Make an Astropy visit table."""
-    visit_ids = visit_ids or [VISIT_ID]
-    table = Table(
-        {
-            "visitId": np.asarray(visit_ids, dtype=np.int64),
-            "visit": np.asarray(visit_ids, dtype=np.int64),
-            "expMidpt": np.asarray(
-                ["2026-01-09T02:46:06.123456789"] * len(visit_ids),
-                dtype="datetime64[ns]",
-            ),
-            "obsStart": np.asarray(
-                ["NaT"] * len(visit_ids), dtype="datetime64[ns]"
-            ),
-        }
-    )
-    table["physical_filter"] = MaskedColumn(
-        ["g_6"] * len(visit_ids), mask=[True] * len(visit_ids)
-    )
-    return table
-
-
-def make_detector_table(
-    *,
-    visit_ids: list[int] | None = None,
-    detector_ids: list[int] | None = None,
-) -> Table:
-    """Make an Astropy detector table."""
-    visit_ids = visit_ids or [VISIT_ID, VISIT_ID]
-    detector_ids = detector_ids or [1001, 1002]
-    return Table(
-        {
-            "detectorId": np.asarray(detector_ids, dtype=np.int64),
-            "visitId": np.asarray(visit_ids, dtype=np.int64),
-            "detector": np.arange(1, len(visit_ids) + 1, dtype=np.int64),
-            "pixelScale": np.asarray([0.2] * len(visit_ids), dtype=np.float32),
-            "skyBg": np.asarray([np.nan] * len(visit_ids), dtype=np.float32),
-        }
-    )
-
-
 def make_registration() -> Any:
     """Make a registration with both required table datasets."""
     return make_visit_registration(
@@ -144,18 +111,51 @@ def make_adapter(
     return adapter, butler, factory
 
 
+def test_realistic_tables_have_all_columns_and_dtypes() -> None:
+    visit_table = make_visit_table()
+    detector_table = make_visit_detector_table()
+
+    assert visit_table.colnames == list(VisitUpsert.model_fields)
+    assert detector_table.colnames == list(VisitDetectorUpsert.model_fields)
+    assert visit_table["visitId"].dtype == np.dtype("int64")
+    assert visit_table["physical_filter"].dtype == np.dtype("U4")
+    assert visit_table["ra"].dtype == np.dtype("float64")
+    assert visit_table["expMidpt"].dtype == np.dtype("datetime64[ns]")
+    assert visit_table["expMidpt"][0] == np.datetime64(
+        "2026-11-05T04:40:22.317658362", "ns"
+    )
+    assert detector_table["detectorId"].dtype == np.dtype("int64")
+    assert detector_table["nShapeletsStar"].dtype == np.dtype("int32")
+    assert detector_table["pixelScale"].dtype == np.dtype("float32")
+    assert detector_table["decl"].dtype == np.dtype("float64")
+    assert detector_table["physical_filter"].dtype == np.dtype("U32")
+    assert detector_table["obsStart"].dtype == np.dtype("datetime64[ns]")
+
+
 def test_fetch_visit_records() -> None:
     adapter, butler, factory = make_adapter(
         {
             VISIT_DATASET_ID: (
                 "visit_table",
-                make_visit_table(visit_ids=[123, VISIT_ID]),
+                make_visit_table(rows=[{"visitId": 123, "visit": 123}, {}]),
             ),
             DETECTOR_DATASET_ID: (
                 "visit_detector_table",
-                make_detector_table(
-                    visit_ids=[123, VISIT_ID, VISIT_ID],
-                    detector_ids=[1000, 1001, 1002],
+                make_visit_detector_table(
+                    rows=[
+                        {
+                            "detectorId": DETECTOR_ID - 1,
+                            "visitId": 123,
+                            "detector": DETECTOR_ID - 1,
+                            "ccdVisitId": CCD_VISIT_ID - 1,
+                        },
+                        {},
+                        {
+                            "detectorId": SECOND_DETECTOR_ID,
+                            "detector": SECOND_DETECTOR_ID,
+                            "ccdVisitId": CCD_VISIT_ID + 1,
+                        },
+                    ]
                 ),
             ),
         }
@@ -165,17 +165,54 @@ def test_fetch_visit_records() -> None:
 
     assert records.visit.visitId == VISIT_ID
     assert records.visit.expMidpt is not None
-    assert records.visit.expMidpt.microsecond == 123456
-    assert records.visit.obsStart is None
-    assert records.visit.physical_filter is None
-    assert [record.detectorId for record in records.detectors] == [1001, 1002]
+    assert records.visit.expMidpt.microsecond == 317658
+    assert records.visit.obsStart is not None
+    assert records.visit.obsStart.microsecond == 317396
+    assert records.visit.physical_filter == "r_57"
+    assert records.visit.skyRotation == pytest.approx(203.302231459618)
+    assert [record.detectorId for record in records.detectors] == [
+        DETECTOR_ID,
+        SECOND_DETECTOR_ID,
+    ]
     assert isinstance(records.visit.visitId, int)
     assert isinstance(records.detectors[0].pixelScale, float)
-    assert records.detectors[0].pixelScale == pytest.approx(0.2)
-    assert records.detectors[0].skyBg is not None
-    assert math.isnan(records.detectors[0].skyBg)
+    assert records.detectors[0].pixelScale == pytest.approx(
+        0.20009875297546387
+    )
+    assert records.detectors[0].nShapeletsStar == 20
+    assert records.detectors[0].ccdVisitId == CCD_VISIT_ID
+    assert records.detectors[0].xSize == 4095
+    assert records.detectors[0].starComa1Median is not None
+    assert math.isnan(records.detectors[0].starComa1Median)
     assert factory.calls == [("prompt", "worker-token")]
     assert butler.requested_ids == [VISIT_DATASET_ID, DETECTOR_DATASET_ID]
+
+
+def test_normalizes_masked_values_and_nat() -> None:
+    visit_table = make_visit_table()
+    visit_table["physical_filter"] = MaskedColumn(
+        visit_table["physical_filter"], mask=[True]
+    )
+    visit_table["obsStart"][0] = np.datetime64("NaT", "ns")
+    detector_table = make_visit_detector_table()
+    detector_table["zeroPoint"] = MaskedColumn(
+        detector_table["zeroPoint"], mask=[True]
+    )
+    adapter, _, _ = make_adapter(
+        {
+            VISIT_DATASET_ID: ("visit_table", visit_table),
+            DETECTOR_DATASET_ID: (
+                "visit_detector_table",
+                detector_table,
+            ),
+        }
+    )
+
+    records = adapter.fetch_visit_records(make_registration())
+
+    assert records.visit.physical_filter is None
+    assert records.visit.obsStart is None
+    assert records.detectors[0].zeroPoint is None
 
 
 @pytest.mark.parametrize(
@@ -242,11 +279,11 @@ def test_rejects_invalid_table(value: Any) -> None:
 )
 def test_rejects_missing_visit_in_either_table(dataset_type: str) -> None:
     visit_table = make_visit_table()
-    detector_table = make_detector_table()
+    detector_table = make_visit_detector_table()
     if dataset_type == "visit_table":
-        visit_table = make_visit_table(visit_ids=[123])
+        visit_table = make_visit_table(rows=[{"visitId": 123, "visit": 123}])
     else:
-        detector_table = make_detector_table(visit_ids=[123, 123])
+        detector_table = make_visit_detector_table(rows=[{"visitId": 123}])
     adapter, _, _ = make_adapter(
         {
             VISIT_DATASET_ID: ("visit_table", visit_table),
@@ -266,11 +303,11 @@ def test_rejects_duplicate_visit_rows() -> None:
         {
             VISIT_DATASET_ID: (
                 "visit_table",
-                make_visit_table(visit_ids=[VISIT_ID, VISIT_ID]),
+                make_visit_table(rows=[{}, {}]),
             ),
             DETECTOR_DATASET_ID: (
                 "visit_detector_table",
-                make_detector_table(),
+                make_visit_detector_table(),
             ),
         }
     )
@@ -280,11 +317,16 @@ def test_rejects_duplicate_visit_rows() -> None:
 
 @pytest.mark.parametrize("identity", ["detectorId", "visit_detector"])
 def test_rejects_duplicate_detector_identities(identity: str) -> None:
-    table = make_detector_table()
+    second = {
+        "detectorId": SECOND_DETECTOR_ID,
+        "detector": SECOND_DETECTOR_ID,
+        "ccdVisitId": CCD_VISIT_ID + 1,
+    }
     if identity == "detectorId":
-        table["detectorId"][1] = table["detectorId"][0]
+        second["detectorId"] = DETECTOR_ID
     else:
-        table["detector"][1] = table["detector"][0]
+        second["detector"] = DETECTOR_ID
+    table = make_visit_detector_table(rows=[{}, second])
     adapter, _, _ = make_adapter(
         {
             VISIT_DATASET_ID: ("visit_table", make_visit_table()),
@@ -310,7 +352,7 @@ def test_rejects_invalid_table_rows(dataset_type: str, table: Table) -> None:
         VISIT_DATASET_ID: ("visit_table", make_visit_table()),
         DETECTOR_DATASET_ID: (
             "visit_detector_table",
-            make_detector_table(),
+            make_visit_detector_table(),
         ),
     }
     dataset_id = (

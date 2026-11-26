@@ -11,7 +11,12 @@ from obsforge.models import (
     VisitUpsert,
 )
 from obsforge.services import VisitDetectorService, VisitService
-from tests.support.visit import make_visit_detector_upsert, make_visit_upsert
+from tests.support.visit import (
+    CCD_VISIT_ID,
+    SECOND_DETECTOR_ID,
+    make_visit_detector_upsert,
+    make_visit_upsert,
+)
 
 
 class FakeVisitStore:
@@ -81,7 +86,9 @@ async def test_visit_detector_service_delegates() -> None:
     service = VisitDetectorService(store)
     first = make_visit_detector_upsert()
     second = make_visit_detector_upsert(
-        detectorId=first.detectorId + 1, detector=2
+        detectorId=SECOND_DETECTOR_ID,
+        detector=SECOND_DETECTOR_ID,
+        ccdVisitId=CCD_VISIT_ID + 1,
     )
 
     created = await service.upsert_many([first, second])
@@ -92,5 +99,5 @@ async def test_visit_detector_service_delegates() -> None:
     assert await service.get_by_detector_id(first.detectorId) == created[0]
     assert await service.get_by_visit_id(first.visitId) == created
 
-    updated = await service.upsert(first.model_copy(update={"seeing": 0.8}))
-    assert updated.seeing == pytest.approx(0.8)
+    updated = await service.upsert(first.model_copy(update={"seeing": 1.9}))
+    assert updated.seeing == pytest.approx(1.9)

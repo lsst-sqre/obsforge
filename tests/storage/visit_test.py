@@ -1,6 +1,9 @@
 """Tests for Visit and VisitDetector storage."""
 
+import math
+
 import pytest
+from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,21 +16,42 @@ from obsforge.storage import (
     VisitDetectorStore,
     VisitStore,
 )
-from tests.support.visit import make_visit_detector_upsert, make_visit_upsert
+from tests.support.visit import (
+    CCD_VISIT_ID,
+    DETECTOR_ID,
+    SECOND_DETECTOR_ID,
+    VISIT_ID,
+    make_visit_detector_upsert,
+    make_visit_upsert,
+)
+
+
+def assert_records_match(actual: BaseModel, expected: BaseModel) -> None:
+    """Assert records match while handling database floats and NaN."""
+    for name, expected_value in expected.model_dump().items():
+        actual_value = getattr(actual, name)
+        if isinstance(expected_value, float):
+            if math.isnan(expected_value):
+                assert math.isnan(actual_value), name
+            else:
+                assert actual_value == pytest.approx(expected_value), name
+        else:
+            assert actual_value == expected_value, name
 
 
 @pytest.mark.asyncio
 async def test_visit_upsert_and_get(db_session: AsyncSession) -> None:
     store = VisitStore(db_session)
-    created = await store.upsert(make_visit_upsert())
-    updated = await store.upsert(
-        make_visit_upsert(physical_filter="r_1", band="r")
-    )
+    record = make_visit_upsert()
+    created = await store.upsert(record)
+    updated_record = make_visit_upsert(skyRotation=204.0)
+    updated = await store.upsert(updated_record)
 
-    assert created.visitId == 2026010800095
+    assert_records_match(created, record)
+    assert created.visitId == VISIT_ID
     assert updated.visitId == created.visitId
-    assert updated.physical_filter == "r_1"
-    assert updated.band == "r"
+    assert updated.skyRotation == pytest.approx(204.0)
+    assert_records_match(updated, updated_record)
     assert await store.get_by_visit_id(created.visitId) == updated
 
 
@@ -45,7 +69,10 @@ async def test_detector_upsert_many_and_reads(
     store = VisitDetectorStore(db_session)
     first = make_visit_detector_upsert()
     second = make_visit_detector_upsert(
-        detectorId=2026010800095002, detector=2
+        detectorId=SECOND_DETECTOR_ID,
+        detector=SECOND_DETECTOR_ID,
+        ccdVisitId=CCD_VISIT_ID + 1,
+        ra=60.2,
     )
 
     created = await store.upsert_many([second, first])
@@ -53,10 +80,13 @@ async def test_detector_upsert_many_and_reads(
         second.detectorId,
         first.detectorId,
     ]
+    assert_records_match(created[0], second)
+    assert_records_match(created[1], first)
 
-    updated = await store.upsert(first.model_copy(update={"seeing": 0.7}))
-    assert updated.seeing == pytest.approx(0.7)
-    assert await store.get_by_detector_id(first.detectorId) == updated
+    updated = await store.upsert(first.model_copy(update={"seeing": 1.9}))
+    assert updated.seeing == pytest.approx(1.9)
+    fetched = await store.get_by_detector_id(first.detectorId)
+    assert_records_match(fetched, updated)
     by_visit = await store.get_by_visit_id(first.visitId)
     assert [record.detectorId for record in by_visit] == [
         first.detectorId,
@@ -121,7 +151,7 @@ async def test_detector_foreign_key_is_enforced(
         await store.upsert(make_visit_detector_upsert())
 
     with pytest.raises(UnknownVisitDetectorRecordError):
-        await store.get_by_detector_id(2026010800095001)
+        await store.get_by_detector_id(DETECTOR_ID)
 
 
 @pytest.mark.asyncio
