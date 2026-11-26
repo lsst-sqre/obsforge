@@ -1,4 +1,4 @@
-"""Add Visit and VisitDetector tables.
+"""Add visit and visitdetector tables.
 
 Revision ID: 8d4e5f607192
 Revises: 7c3d4e5f6081
@@ -21,7 +21,8 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.create_table(
-        "Visit",
+        "visit",
+        sa.Column("instrument", sa.Text(), nullable=False),
         sa.Column(
             "visitId", sa.BigInteger(), autoincrement=False, nullable=False
         ),
@@ -41,11 +42,14 @@ def upgrade() -> None:
         sa.Column("expMidptMJD", sa.DOUBLE_PRECISION(), nullable=True),
         sa.Column("obsStart", sa.DateTime(), nullable=True),
         sa.Column("obsStartMJD", sa.DOUBLE_PRECISION(), nullable=True),
-        sa.PrimaryKeyConstraint("visitId"),
-        sa.UniqueConstraint("visit", name="visit_visit_key"),
+        sa.PrimaryKeyConstraint("instrument", "visitId"),
+        sa.UniqueConstraint(
+            "instrument", "visit", name="visit_instrument_visit_key"
+        ),
     )
     op.create_table(
-        "VisitDetector",
+        "visitdetector",
+        sa.Column("instrument", sa.Text(), nullable=False),
         sa.Column(
             "detectorId", sa.BigInteger(), autoincrement=False, nullable=False
         ),
@@ -142,11 +146,13 @@ def upgrade() -> None:
             sa.DOUBLE_PRECISION(),
             nullable=True,
         ),
-        sa.ForeignKeyConstraint(["visitId"], ["Visit.visitId"]),
-        sa.PrimaryKeyConstraint("visitId", "detectorId"),
+        sa.ForeignKeyConstraint(
+            ["instrument", "visitId"], ["visit.instrument", "visit.visitId"]
+        ),
+        sa.PrimaryKeyConstraint("instrument", "visitId", "detectorId"),
     )
 
 
 def downgrade() -> None:
-    op.drop_table("VisitDetector")
-    op.drop_table("Visit")
+    op.drop_table("visitdetector")
+    op.drop_table("visit")

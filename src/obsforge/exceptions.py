@@ -43,8 +43,12 @@ class UnknownVisitRecordError(ClientRequestError):
     error = "unknown_visit_record"
     status_code = status.HTTP_404_NOT_FOUND
 
-    def __init__(self, visit_id: int) -> None:
-        super().__init__(f"Unknown Visit record {visit_id}")
+    def __init__(self, instrument: str, visit_id: int) -> None:
+        super().__init__(
+            f"Unknown Visit record for instrument {instrument!r} "
+            f"and visit {visit_id}"
+        )
+        self.instrument = instrument
         self.visit_id = visit_id
 
 
@@ -54,11 +58,15 @@ class UnknownVisitDetectorRecordError(ClientRequestError):
     error = "unknown_visit_detector_record"
     status_code = status.HTTP_404_NOT_FOUND
 
-    def __init__(self, visit_id: int, detector_id: int) -> None:
+    def __init__(
+        self, instrument: str, visit_id: int, detector_id: int
+    ) -> None:
         super().__init__(
-            f"Unknown VisitDetector record for visit {visit_id}, "
+            f"Unknown VisitDetector record for instrument {instrument!r}, "
+            f"visit {visit_id}, "
             f"detector ID {detector_id}"
         )
+        self.instrument = instrument
         self.visit_id = visit_id
         self.detector_id = detector_id
 

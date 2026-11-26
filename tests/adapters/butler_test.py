@@ -12,6 +12,7 @@ from lsst.daf.butler import LabeledButlerFactory
 from obsforge.adapters import (
     ButlerAdapter,
     ButlerDatasetCardinalityError,
+    ButlerDatasetInstrumentError,
     ButlerDatasetNotFoundError,
     ButlerDatasetTypeError,
     DuplicateVisitDetectorRowsError,
@@ -19,12 +20,15 @@ from obsforge.adapters import (
     InvalidButlerTableError,
     VisitNotFoundInDatasetError,
 )
-from obsforge.models import VisitDetectorUpsert, VisitUpsert
+from obsforge.models import VisitDetectorUpsert, VisitRegistration, VisitUpsert
+from tests.support.butler import FakeButler, FakeButlerFactory
 from tests.support.registration import make_visit_registration
 from tests.support.visit import (
     CCD_VISIT_ID,
     DETECTOR_ID,
+    INSTRUMENT,
     SECOND_DETECTOR_ID,
+    SECOND_INSTRUMENT,
     VISIT_ID,
     make_visit_detector_table,
     make_visit_table,
@@ -34,58 +38,10 @@ VISIT_DATASET_ID = UUID("01a1b340-154e-7fce-b26c-b671f660788f")
 DETECTOR_DATASET_ID = UUID("01a1b340-154e-7fce-b26c-b671f6607890")
 
 
-class FakeDatasetType:
-    """Minimal Butler dataset type."""
-
-    def __init__(self, name: str) -> None:
-        self.name = name
-
-
-class FakeDatasetRef:
-    """Minimal Butler dataset reference."""
-
-    def __init__(self, dataset_id: UUID, dataset_type: str) -> None:
-        self.id = dataset_id
-        self.datasetType = FakeDatasetType(dataset_type)
-
-
-class FakeButler:
-    """In-memory Butler test double."""
-
-    def __init__(self, datasets: dict[UUID, tuple[str, Any]]) -> None:
-        self.datasets = datasets
-        self.requested_ids: list[UUID] = []
-        self.requested_refs: list[FakeDatasetRef] = []
-
-    def get_dataset(self, dataset_id: UUID) -> FakeDatasetRef | None:
-        self.requested_ids.append(dataset_id)
-        entry = self.datasets.get(dataset_id)
-        if entry is None:
-            return None
-        return FakeDatasetRef(dataset_id, entry[0])
-
-    def get(self, ref: FakeDatasetRef) -> Any:
-        self.requested_refs.append(ref)
-        return self.datasets[ref.id][1]
-
-
-class FakeButlerFactory:
-    """Factory that returns one configured fake Butler."""
-
-    def __init__(self, butler: FakeButler) -> None:
-        self.butler = butler
-        self.calls: list[tuple[str, str | None]] = []
-
-    def create_butler(
-        self, *, label: str, access_token: str | None = None
-    ) -> FakeButler:
-        self.calls.append((label, access_token))
-        return self.butler
-
-
-def make_registration() -> Any:
+def make_registration(instrument: str = INSTRUMENT) -> VisitRegistration:
     """Make a registration with both required table datasets."""
     return make_visit_registration(
+        instrument=instrument,
         visit=VISIT_ID,
         datasets=[
             {"dataset_type": "visit_table", "id": VISIT_DATASET_ID},
@@ -99,9 +55,11 @@ def make_registration() -> Any:
 
 def make_adapter(
     datasets: dict[UUID, tuple[str, Any]],
+    *,
+    instruments: dict[UUID, str | None] | None = None,
 ) -> tuple[ButlerAdapter, FakeButler, FakeButlerFactory]:
     """Make an adapter and its fakes."""
-    butler = FakeButler(datasets)
+    butler = FakeButler(datasets, instruments=instruments)
     factory = FakeButlerFactory(butler)
     adapter = ButlerAdapter(
         butler_factory=cast("LabeledButlerFactory", factory),
@@ -115,8 +73,14 @@ def test_realistic_tables_have_all_columns_and_dtypes() -> None:
     visit_table = make_visit_table()
     detector_table = make_visit_detector_table()
 
-    assert visit_table.colnames == list(VisitUpsert.model_fields)
-    assert detector_table.colnames == list(VisitDetectorUpsert.model_fields)
+    assert visit_table.colnames == [
+        name for name in VisitUpsert.model_fields if name != "instrument"
+    ]
+    assert detector_table.colnames == [
+        name
+        for name in VisitDetectorUpsert.model_fields
+        if name != "instrument"
+    ]
     assert visit_table["visitId"].dtype == np.dtype("int64")
     assert visit_table["physical_filter"].dtype == np.dtype("U4")
     assert visit_table["ra"].dtype == np.dtype("float64")
@@ -132,7 +96,8 @@ def test_realistic_tables_have_all_columns_and_dtypes() -> None:
     assert detector_table["obsStart"].dtype == np.dtype("datetime64[ns]")
 
 
-def test_fetch_visit_records() -> None:
+@pytest.mark.parametrize("instrument", [INSTRUMENT, SECOND_INSTRUMENT])
+def test_fetch_visit_records(instrument: str) -> None:
     adapter, butler, factory = make_adapter(
         {
             VISIT_DATASET_ID: (
@@ -155,12 +120,18 @@ def test_fetch_visit_records() -> None:
                     ]
                 ),
             ),
-        }
+        },
+        instruments={
+            VISIT_DATASET_ID: instrument,
+            DETECTOR_DATASET_ID: instrument,
+        },
     )
 
-    records = adapter.fetch_visit_records(make_registration())
+    records = adapter.fetch_visit_records(make_registration(instrument))
 
     assert records.visit.visitId == VISIT_ID
+    assert records.visit.instrument == instrument
+    assert {record.instrument for record in records.detectors} == {instrument}
     assert records.visit.expMidpt is not None
     assert records.visit.expMidpt.microsecond == 317658
     assert records.visit.obsStart is not None
@@ -187,6 +158,30 @@ def test_fetch_visit_records() -> None:
     assert math.isnan(records.detectors[0].starComa1Median)
     assert factory.calls == [("prompt", "worker-token")]
     assert butler.requested_ids == [VISIT_DATASET_ID, DETECTOR_DATASET_ID]
+
+
+@pytest.mark.parametrize("dataset_id", [VISIT_DATASET_ID, DETECTOR_DATASET_ID])
+@pytest.mark.parametrize("instrument", [None, SECOND_INSTRUMENT])
+def test_rejects_missing_or_mismatched_instrument(
+    dataset_id: UUID, instrument: str | None
+) -> None:
+    adapter, butler, _ = make_adapter(
+        {
+            VISIT_DATASET_ID: ("visit_table", make_visit_table()),
+            DETECTOR_DATASET_ID: (
+                "visit_detector_table",
+                make_visit_detector_table(),
+            ),
+        },
+        instruments={dataset_id: instrument},
+    )
+
+    with pytest.raises(ButlerDatasetInstrumentError) as exc_info:
+        adapter.fetch_visit_records(make_registration())
+    assert exc_info.value.dataset_id == dataset_id
+    assert exc_info.value.expected == INSTRUMENT
+    assert exc_info.value.actual == instrument
+    assert dataset_id not in [ref.id for ref in butler.requested_refs]
 
 
 def test_normalizes_masked_values_and_nat() -> None:

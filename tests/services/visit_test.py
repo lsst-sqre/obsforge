@@ -23,22 +23,24 @@ class FakeVisitStore:
     """In-memory Visit store test double."""
 
     def __init__(self) -> None:
-        self.records: dict[int, SerializedVisit] = {}
+        self.records: dict[tuple[str, int], SerializedVisit] = {}
 
     async def upsert(self, record: VisitUpsert) -> SerializedVisit:
         serialized = SerializedVisit.model_validate(record.model_dump())
-        self.records[record.visitId] = serialized
+        self.records[record.instrument, record.visitId] = serialized
         return serialized
 
-    async def get_by_visit_id(self, visit_id: int) -> SerializedVisit:
-        return self.records[visit_id]
+    async def get_by_visit_id(
+        self, instrument: str, visit_id: int
+    ) -> SerializedVisit:
+        return self.records[instrument, visit_id]
 
 
 class FakeVisitDetectorStore:
     """In-memory VisitDetector store test double."""
 
     def __init__(self) -> None:
-        self.records: dict[tuple[int, int], SerializedVisitDetector] = {}
+        self.records: dict[tuple[str, int, int], SerializedVisitDetector] = {}
 
     async def upsert(
         self, record: VisitDetectorUpsert
@@ -46,7 +48,9 @@ class FakeVisitDetectorStore:
         serialized = SerializedVisitDetector.model_validate(
             record.model_dump()
         )
-        self.records[record.visitId, record.detectorId] = serialized
+        self.records[record.instrument, record.visitId, record.detectorId] = (
+            serialized
+        )
         return serialized
 
     async def upsert_many(
@@ -55,17 +59,17 @@ class FakeVisitDetectorStore:
         return [await self.upsert(record) for record in records]
 
     async def get_by_visit_and_detector_id(
-        self, visit_id: int, detector_id: int
+        self, instrument: str, visit_id: int, detector_id: int
     ) -> SerializedVisitDetector:
-        return self.records[visit_id, detector_id]
+        return self.records[instrument, visit_id, detector_id]
 
     async def get_by_visit_id(
-        self, visit_id: int
+        self, instrument: str, visit_id: int
     ) -> list[SerializedVisitDetector]:
         return [
             record
             for record in self.records.values()
-            if record.visitId == visit_id
+            if record.instrument == instrument and record.visitId == visit_id
         ]
 
 
@@ -77,7 +81,10 @@ async def test_visit_service_delegates() -> None:
 
     created = await service.upsert(record)
     assert created == SerializedVisit.model_validate(record.model_dump())
-    assert await service.get_by_visit_id(record.visitId) == created
+    assert (
+        await service.get_by_visit_id(record.instrument, record.visitId)
+        == created
+    )
 
 
 @pytest.mark.asyncio
@@ -96,10 +103,13 @@ async def test_visit_detector_service_delegates() -> None:
         second.detectorId,
     ]
     fetched = await service.get_by_visit_and_detector_id(
-        second.visitId, second.detectorId
+        second.instrument, second.visitId, second.detectorId
     )
     assert fetched == created[1]
-    assert await service.get_by_visit_id(first.visitId) == created
+    assert (
+        await service.get_by_visit_id(first.instrument, first.visitId)
+        == created
+    )
 
     updated = await service.upsert(first.model_copy(update={"seeing": 1.9}))
     assert updated.seeing == pytest.approx(1.9)

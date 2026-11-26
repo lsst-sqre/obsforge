@@ -118,6 +118,10 @@ same registration must contain exactly one `visit_table` UUID and one
 selects rows matching the registered `visit`, and upserts the Visit and
 VisitDetector records.
 
+The worker verifies the instrument on both Butler dataset references and
+stores it in both tables. Join Visit to VisitDetector on both `instrument`
+and `visitId`.
+
 Registering the same `instrument` and `visit` pair again is idempotent:
 
 ```sh

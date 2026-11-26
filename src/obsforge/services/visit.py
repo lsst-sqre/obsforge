@@ -18,7 +18,9 @@ class VisitStoreProtocol(Protocol):
 
     async def upsert(self, record: VisitUpsert) -> SerializedVisit: ...
 
-    async def get_by_visit_id(self, visit_id: int) -> SerializedVisit: ...
+    async def get_by_visit_id(
+        self, instrument: str, visit_id: int
+    ) -> SerializedVisit: ...
 
 
 class VisitService:
@@ -31,9 +33,11 @@ class VisitService:
         """Insert or update one Visit record."""
         return await self._store.upsert(record)
 
-    async def get_by_visit_id(self, visit_id: int) -> SerializedVisit:
-        """Retrieve one Visit record by visit ID."""
-        return await self._store.get_by_visit_id(visit_id)
+    async def get_by_visit_id(
+        self, instrument: str, visit_id: int
+    ) -> SerializedVisit:
+        """Retrieve one Visit record for an instrument and visit ID."""
+        return await self._store.get_by_visit_id(instrument, visit_id)
 
 
 class VisitDetectorStoreProtocol(Protocol):
@@ -48,11 +52,11 @@ class VisitDetectorStoreProtocol(Protocol):
     ) -> list[SerializedVisitDetector]: ...
 
     async def get_by_visit_and_detector_id(
-        self, visit_id: int, detector_id: int
+        self, instrument: str, visit_id: int, detector_id: int
     ) -> SerializedVisitDetector: ...
 
     async def get_by_visit_id(
-        self, visit_id: int
+        self, instrument: str, visit_id: int
     ) -> list[SerializedVisitDetector]: ...
 
 
@@ -75,15 +79,15 @@ class VisitDetectorService:
         return await self._store.upsert_many(records)
 
     async def get_by_visit_and_detector_id(
-        self, visit_id: int, detector_id: int
+        self, instrument: str, visit_id: int, detector_id: int
     ) -> SerializedVisitDetector:
-        """Retrieve one VisitDetector record by visit ID and detector ID."""
+        """Retrieve one record by instrument, visit ID, and detector ID."""
         return await self._store.get_by_visit_and_detector_id(
-            visit_id, detector_id
+            instrument, visit_id, detector_id
         )
 
     async def get_by_visit_id(
-        self, visit_id: int
+        self, instrument: str, visit_id: int
     ) -> list[SerializedVisitDetector]:
-        """Retrieve all VisitDetector records for a visit."""
-        return await self._store.get_by_visit_id(visit_id)
+        """Retrieve all VisitDetector records for an instrument and visit."""
+        return await self._store.get_by_visit_id(instrument, visit_id)

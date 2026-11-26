@@ -13,7 +13,9 @@ from obsforge.models import VisitDetectorUpsert, VisitUpsert
 __all__ = [
     "CCD_VISIT_ID",
     "DETECTOR_ID",
+    "INSTRUMENT",
     "SECOND_DETECTOR_ID",
+    "SECOND_INSTRUMENT",
     "VISIT_ID",
     "make_visit_detector_table",
     "make_visit_detector_upsert",
@@ -22,6 +24,8 @@ __all__ = [
 ]
 
 VISIT_ID = 2026110400269
+INSTRUMENT = "LSSTCam"
+SECOND_INSTRUMENT = "LATISS"
 DETECTOR_ID = 99
 SECOND_DETECTOR_ID = 100
 CCD_VISIT_ID = 51598396771
@@ -222,13 +226,15 @@ _VISIT_DETECTOR_DTYPES = {
 
 def make_visit_upsert(**overrides: Any) -> VisitUpsert:
     """Make a complete, production-shaped Visit upsert model."""
-    return VisitUpsert.model_validate(_VISIT_VALUES | overrides)
+    return VisitUpsert.model_validate(
+        _VISIT_VALUES | {"instrument": INSTRUMENT} | overrides
+    )
 
 
 def make_visit_detector_upsert(**overrides: Any) -> VisitDetectorUpsert:
     """Make a complete, production-shaped VisitDetector upsert model."""
     return VisitDetectorUpsert.model_validate(
-        _VISIT_DETECTOR_VALUES | overrides
+        _VISIT_DETECTOR_VALUES | {"instrument": INSTRUMENT} | overrides
     )
 
 

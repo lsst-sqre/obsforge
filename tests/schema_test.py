@@ -72,17 +72,34 @@ async def test_schema_migrations() -> None:
         assert "ObsCore" not in ivoa_tables
 
         async with engine.connect() as connection:
-            primary_key = await connection.run_sync(
-                lambda conn: inspect(conn).get_pk_constraint("VisitDetector")
+            visit_key = await connection.run_sync(
+                lambda conn: inspect(conn).get_pk_constraint("visit")
+            )
+            detector_key = await connection.run_sync(
+                lambda conn: inspect(conn).get_pk_constraint("visitdetector")
+            )
+            visit_uniques = await connection.run_sync(
+                lambda conn: inspect(conn).get_unique_constraints("visit")
             )
             foreign_keys = await connection.run_sync(
-                lambda conn: inspect(conn).get_foreign_keys("VisitDetector")
+                lambda conn: inspect(conn).get_foreign_keys("visitdetector")
             )
-        assert primary_key["constrained_columns"] == ["visitId", "detectorId"]
+        assert visit_key["constrained_columns"] == ["instrument", "visitId"]
+        assert detector_key["constrained_columns"] == [
+            "instrument",
+            "visitId",
+            "detectorId",
+        ]
+        assert [key["column_names"] for key in visit_uniques] == [
+            ["instrument", "visit"]
+        ]
         assert len(foreign_keys) == 1
-        assert foreign_keys[0]["constrained_columns"] == ["visitId"]
-        assert foreign_keys[0]["referred_table"] == "Visit"
-        assert foreign_keys[0]["referred_columns"] == ["visitId"]
+        assert foreign_keys[0]["constrained_columns"] == [
+            "instrument",
+            "visitId",
+        ]
+        assert foreign_keys[0]["referred_table"] == "visit"
+        assert foreign_keys[0]["referred_columns"] == ["instrument", "visitId"]
     finally:
         await engine.dispose()
 
@@ -269,15 +286,16 @@ def test_obscore_column_info() -> None:
 
 
 def test_visit_tables_registered() -> None:
-    assert SchemaBase.metadata.tables["Visit"] is Visit.__table__
+    assert SchemaBase.metadata.tables["visit"] is Visit.__table__
     assert (
-        SchemaBase.metadata.tables["VisitDetector"] is VisitDetector.__table__
+        SchemaBase.metadata.tables["visitdetector"] is VisitDetector.__table__
     )
 
 
 def test_visit_columns_and_types() -> None:
     columns = Visit.__table__.columns
     assert set(columns.keys()) == {
+        "instrument",
         "visitId",
         "visit",
         "physical_filter",
@@ -296,7 +314,7 @@ def test_visit_columns_and_types() -> None:
         "obsStart",
         "obsStartMJD",
     }
-    assert columns["visitId"].primary_key is True
+    assert isinstance(columns["instrument"].type, Text)
     assert isinstance(columns["visitId"].type, BigInteger)
     assert isinstance(columns["visit"].type, BigInteger)
     assert isinstance(columns["ra"].type, DOUBLE_PRECISION)
@@ -306,7 +324,7 @@ def test_visit_columns_and_types() -> None:
     assert columns["physical_filter"].type.length == 4
     assert isinstance(columns["band"].type, String)
     assert columns["band"].type.length == 1
-    required = {"visitId", "visit"}
+    required = {"instrument", "visitId", "visit"}
     for name, column in columns.items():
         assert column.nullable is (name not in required)
 
@@ -314,6 +332,7 @@ def test_visit_columns_and_types() -> None:
 def test_visit_detector_columns_and_types() -> None:
     columns = VisitDetector.__table__.columns
     assert set(columns.keys()) == {
+        "instrument",
         "detectorId",
         "visitId",
         "physical_filter",
@@ -391,6 +410,7 @@ def test_visit_detector_columns_and_types() -> None:
         "wcsPreliminaryDetectorPointingResidual",
         "wcsPreliminaryVisitPointingResidual",
     }
+    assert isinstance(columns["instrument"].type, Text)
     assert isinstance(columns["detectorId"].type, BigInteger)
     assert isinstance(columns["visitId"].type, BigInteger)
     assert isinstance(columns["nPsfStar"].type, Integer)
@@ -402,24 +422,30 @@ def test_visit_detector_columns_and_types() -> None:
     assert columns["band"].type.length == 32
     assert isinstance(columns["expMidpt"].type, DateTime)
     assert columns["expMidpt"].type.timezone is False
-    required = {"detectorId", "visitId", "detector"}
+    required = {"instrument", "detectorId", "visitId", "detector"}
     for name, column in columns.items():
         assert column.nullable is (name not in required)
 
 
 def test_visit_constraints_and_indexes() -> None:
     visit_table = cast("Table", Visit.__table__)
+    assert [column.name for column in visit_table.primary_key.columns] == [
+        "instrument",
+        "visitId",
+    ]
     visit_uniques = {
         constraint.name: constraint
         for constraint in visit_table.constraints
         if isinstance(constraint, UniqueConstraint)
     }
-    assert {
-        column.name for column in visit_uniques["visit_visit_key"].columns
-    } == {"visit"}
+    assert [
+        column.name
+        for column in visit_uniques["visit_instrument_visit_key"].columns
+    ] == ["instrument", "visit"]
 
     detector_table = cast("Table", VisitDetector.__table__)
     assert [column.name for column in detector_table.primary_key.columns] == [
+        "instrument",
         "visitId",
         "detectorId",
     ]
@@ -435,7 +461,7 @@ def test_visit_constraints_and_indexes() -> None:
     assert len(foreign_keys) == 1
     assert [
         element.target_fullname for element in foreign_keys[0].elements
-    ] == ["Visit.visitId"]
+    ] == ["visit.instrument", "visit.visitId"]
     assert not detector_table.indexes
 
 

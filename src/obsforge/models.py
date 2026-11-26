@@ -199,6 +199,7 @@ class SerializedObsCore(ObsCoreRecord):
 class VisitRecord(BaseModel):
     """Complete Visit record."""
 
+    instrument: str
     visitId: int
     visit: int
     physical_filter: str | None = Field(None, max_length=4)
@@ -229,6 +230,7 @@ class SerializedVisit(VisitRecord):
 class VisitDetectorRecord(BaseModel):
     """Complete VisitDetector record."""
 
+    instrument: str
     detectorId: int
     visitId: int
     physical_filter: str | None = Field(None, max_length=32)

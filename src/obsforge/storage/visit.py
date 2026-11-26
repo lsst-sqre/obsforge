@@ -34,7 +34,7 @@ class DuplicateVisitDetectorBatchError(ValueError):
     def __init__(self) -> None:
         super().__init__(
             "VisitDetector batch contains duplicate "
-            "(visitId, detectorId) values"
+            "(instrument, visitId, detectorId) values"
         )
 
 
@@ -46,28 +46,32 @@ class VisitStore:
 
     @retry_async_transaction
     async def upsert(self, record: VisitUpsert) -> SerializedVisit:
-        """Insert or update one Visit record by visit ID."""
+        """Insert or update a Visit record for an instrument and visit ID."""
         values = record.model_dump()
         insert_stmt = insert(SQLVisit).values(values)
         stmt = insert_stmt.on_conflict_do_update(
-            index_elements=[SQLVisit.visitId],
+            index_elements=[SQLVisit.instrument, SQLVisit.visitId],
             set_={
                 key: getattr(insert_stmt.excluded, key)
                 for key in values
-                if key != "visitId"
+                if key not in {"instrument", "visitId"}
             },
         ).returning(SQLVisit)
         async with self._session.begin():
             visit: SQLVisit = (await self._session.execute(stmt)).scalar_one()
             return self._serialize(visit)
 
-    async def get_by_visit_id(self, visit_id: int) -> SerializedVisit:
-        """Retrieve a Visit record by visit ID."""
-        stmt = select(SQLVisit).where(SQLVisit.visitId == visit_id)
+    async def get_by_visit_id(
+        self, instrument: str, visit_id: int
+    ) -> SerializedVisit:
+        """Retrieve a Visit record for an instrument and visit ID."""
+        stmt = select(SQLVisit).where(
+            SQLVisit.instrument == instrument, SQLVisit.visitId == visit_id
+        )
         async with self._session.begin():
             visit = (await self._session.execute(stmt)).scalar_one_or_none()
             if visit is None:
-                raise UnknownVisitRecordError(visit_id)
+                raise UnknownVisitRecordError(instrument, visit_id)
             return self._serialize(visit)
 
     def _serialize(self, visit: SQLVisit) -> SerializedVisit:
@@ -84,7 +88,7 @@ class VisitDetectorStore:
     async def upsert(
         self, record: VisitDetectorUpsert
     ) -> SerializedVisitDetector:
-        """Insert or update a record by visit ID and detector ID."""
+        """Upsert a record by instrument, visit ID, and detector ID."""
         stmt = self._upsert_statement([record.model_dump()])
         async with self._session.begin():
             detector: SQLVisitDetector = (
@@ -111,35 +115,43 @@ class VisitDetectorStore:
             )
 
             rows_by_key = {
-                (row.visitId, row.detectorId): self._serialize(row)
+                (row.instrument, row.visitId, row.detectorId): self._serialize(
+                    row
+                )
                 for row in rows
             }
         return [
-            rows_by_key[record.visitId, record.detectorId]
+            rows_by_key[record.instrument, record.visitId, record.detectorId]
             for record in records
         ]
 
     async def get_by_visit_and_detector_id(
-        self, visit_id: int, detector_id: int
+        self, instrument: str, visit_id: int, detector_id: int
     ) -> SerializedVisitDetector:
-        """Retrieve a VisitDetector record by visit ID and detector ID."""
+        """Retrieve a record by instrument, visit ID, and detector ID."""
         stmt = select(SQLVisitDetector).where(
+            SQLVisitDetector.instrument == instrument,
             SQLVisitDetector.visitId == visit_id,
             SQLVisitDetector.detectorId == detector_id,
         )
         async with self._session.begin():
             row = (await self._session.execute(stmt)).scalar_one_or_none()
             if row is None:
-                raise UnknownVisitDetectorRecordError(visit_id, detector_id)
+                raise UnknownVisitDetectorRecordError(
+                    instrument, visit_id, detector_id
+                )
             return self._serialize(row)
 
     async def get_by_visit_id(
-        self, visit_id: int
+        self, instrument: str, visit_id: int
     ) -> list[SerializedVisitDetector]:
-        """Retrieve all detector records for a visit."""
+        """Retrieve all detector records for an instrument and visit."""
         stmt = (
             select(SQLVisitDetector)
-            .where(SQLVisitDetector.visitId == visit_id)
+            .where(
+                SQLVisitDetector.instrument == instrument,
+                SQLVisitDetector.visitId == visit_id,
+            )
             .order_by(SQLVisitDetector.detectorId)
         )
         async with self._session.begin():
@@ -158,10 +170,11 @@ class VisitDetectorStore:
         update_values = {
             key: getattr(insert_stmt.excluded, key)
             for key in values[0]
-            if key not in {"visitId", "detectorId"}
+            if key not in {"instrument", "visitId", "detectorId"}
         }
         return insert_stmt.on_conflict_do_update(
             index_elements=[
+                SQLVisitDetector.instrument,
                 SQLVisitDetector.visitId,
                 SQLVisitDetector.detectorId,
             ],
@@ -169,6 +182,9 @@ class VisitDetectorStore:
         ).returning(SQLVisitDetector)
 
     def _validate_batch(self, records: Sequence[VisitDetectorUpsert]) -> None:
-        keys = {(record.visitId, record.detectorId) for record in records}
+        keys = {
+            (record.instrument, record.visitId, record.detectorId)
+            for record in records
+        }
         if len(keys) != len(records):
             raise DuplicateVisitDetectorBatchError

@@ -5,10 +5,11 @@ from datetime import datetime
 from sqlalchemy import (
     BigInteger,
     DateTime,
-    ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     PrimaryKeyConstraint,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import DOUBLE_PRECISION, REAL
@@ -22,10 +23,11 @@ __all__ = ["Visit", "VisitDetector"]
 class Visit(SchemaBase):
     """Metadata about one telescope visit."""
 
-    __tablename__ = "Visit"
+    __tablename__ = "visit"
 
+    instrument: Mapped[str] = mapped_column(Text, nullable=False)
     visitId: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True, autoincrement=False
+        BigInteger, autoincrement=False, nullable=False
     )
     visit: Mapped[int] = mapped_column(BigInteger, nullable=False)
     physical_filter: Mapped[str | None] = mapped_column(
@@ -66,21 +68,31 @@ class Visit(SchemaBase):
         DOUBLE_PRECISION, nullable=True
     )
 
-    __table_args__ = (UniqueConstraint("visit", name="visit_visit_key"),)
+    __table_args__ = (
+        PrimaryKeyConstraint("instrument", "visitId"),
+        UniqueConstraint(
+            "instrument", "visit", name="visit_instrument_visit_key"
+        ),
+    )
 
 
 class VisitDetector(SchemaBase):
     """Per-detector metadata and metrics for one visit."""
 
-    __tablename__ = "VisitDetector"
-    __table_args__ = (PrimaryKeyConstraint("visitId", "detectorId"),)
+    __tablename__ = "visitdetector"
+    __table_args__ = (
+        PrimaryKeyConstraint("instrument", "visitId", "detectorId"),
+        ForeignKeyConstraint(
+            ["instrument", "visitId"], ["visit.instrument", "visit.visitId"]
+        ),
+    )
 
+    instrument: Mapped[str] = mapped_column(Text, nullable=False)
     detectorId: Mapped[int] = mapped_column(
         BigInteger, autoincrement=False, nullable=False
     )
     visitId: Mapped[int] = mapped_column(
         BigInteger,
-        ForeignKey("Visit.visitId"),
         autoincrement=False,
         nullable=False,
     )

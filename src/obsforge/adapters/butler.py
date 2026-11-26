@@ -14,6 +14,7 @@ from obsforge.models import VisitDetectorUpsert, VisitRegistration, VisitUpsert
 __all__ = [
     "ButlerAdapter",
     "ButlerDatasetCardinalityError",
+    "ButlerDatasetInstrumentError",
     "ButlerDatasetNotFoundError",
     "ButlerDatasetTypeError",
     "ButlerVisitRecords",
@@ -59,6 +60,21 @@ class ButlerDatasetTypeError(ValueError):
             f"expected {expected!r}"
         )
         super().__init__(msg)
+        self.dataset_id = dataset_id
+        self.expected = expected
+        self.actual = actual
+
+
+class ButlerDatasetInstrumentError(ValueError):
+    """Raised when a dataset has a missing or unexpected instrument."""
+
+    def __init__(
+        self, dataset_id: UUID, *, expected: str, actual: str | int | None
+    ) -> None:
+        super().__init__(
+            f"Butler dataset {dataset_id} has instrument {actual!r}, "
+            f"expected {expected!r}"
+        )
         self.dataset_id = dataset_id
         self.expected = expected
         self.actual = actual
@@ -141,15 +157,24 @@ class ButlerAdapter:
             label=self._butler_label,
             access_token=self._access_token,
         )
+        instrument = registration.instrument
         visit_table = self._get_table(
-            butler, visit_dataset_id, _VISIT_DATASET_TYPE
+            butler,
+            visit_dataset_id,
+            _VISIT_DATASET_TYPE,
+            instrument=instrument,
         )
         detector_table = self._get_table(
-            butler, detector_dataset_id, _VISIT_DETECTOR_DATASET_TYPE
+            butler,
+            detector_dataset_id,
+            _VISIT_DETECTOR_DATASET_TYPE,
+            instrument=instrument,
         )
-        visit = self._get_visit(visit_table, registration.visit)
+        visit = self._get_visit(
+            visit_table, registration.visit, instrument=instrument
+        )
         detectors = self._get_visit_detectors(
-            detector_table, registration.visit
+            detector_table, registration.visit, instrument=instrument
         )
         return ButlerVisitRecords(visit=visit, detectors=detectors)
 
@@ -166,7 +191,12 @@ class ButlerAdapter:
         return dataset_ids[0]
 
     def _get_table(
-        self, butler: Butler, dataset_id: UUID, dataset_type: str
+        self,
+        butler: Butler,
+        dataset_id: UUID,
+        dataset_type: str,
+        *,
+        instrument: str,
     ) -> Table:
         ref = butler.get_dataset(dataset_id)
         if ref is None:
@@ -175,6 +205,11 @@ class ButlerAdapter:
         if actual_type != dataset_type:
             raise ButlerDatasetTypeError(
                 dataset_id, expected=dataset_type, actual=actual_type
+            )
+        actual_instrument = ref.dataId.get("instrument")
+        if actual_instrument != instrument:
+            raise ButlerDatasetInstrumentError(
+                dataset_id, expected=instrument, actual=actual_instrument
             )
         table = butler.get(ref)
         if not isinstance(table, Table):
@@ -188,19 +223,23 @@ class ButlerAdapter:
             )
         return table
 
-    def _get_visit(self, table: Table, visit: int) -> VisitUpsert:
+    def _get_visit(
+        self, table: Table, visit: int, *, instrument: str
+    ) -> VisitUpsert:
         rows = self._matching_rows(table, visit, _VISIT_DATASET_TYPE)
         if len(rows) == 0:
             raise VisitNotFoundInDatasetError(visit, _VISIT_DATASET_TYPE)
         if len(rows) != 1:
             raise DuplicateVisitRowsError(visit, len(rows))
         try:
-            return VisitUpsert.model_validate(self._row_to_dict(rows, 0))
+            return VisitUpsert.model_validate(
+                self._row_to_dict(rows, 0) | {"instrument": instrument}
+            )
         except (TypeError, ValueError, OverflowError) as e:
             raise InvalidButlerTableError(_VISIT_DATASET_TYPE, str(e)) from e
 
     def _get_visit_detectors(
-        self, table: Table, visit: int
+        self, table: Table, visit: int, *, instrument: str
     ) -> list[VisitDetectorUpsert]:
         rows = self._matching_rows(table, visit, _VISIT_DETECTOR_DATASET_TYPE)
         if len(rows) == 0:
@@ -210,7 +249,7 @@ class ButlerAdapter:
         try:
             records = [
                 VisitDetectorUpsert.model_validate(
-                    self._row_to_dict(rows, index)
+                    self._row_to_dict(rows, index) | {"instrument": instrument}
                 )
                 for index in range(len(rows))
             ]

@@ -3,6 +3,7 @@
 from .butler import (
     ButlerAdapter,
     ButlerDatasetCardinalityError,
+    ButlerDatasetInstrumentError,
     ButlerDatasetNotFoundError,
     ButlerDatasetTypeError,
     ButlerVisitRecords,
@@ -16,6 +17,7 @@ from .obscore import DaxObsCoreAdapter, MissingObsCoreDatasetError
 __all__ = [
     "ButlerAdapter",
     "ButlerDatasetCardinalityError",
+    "ButlerDatasetInstrumentError",
     "ButlerDatasetNotFoundError",
     "ButlerDatasetTypeError",
     "ButlerVisitRecords",
