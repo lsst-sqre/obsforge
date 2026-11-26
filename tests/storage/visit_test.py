@@ -70,7 +70,6 @@ async def test_detector_upsert_many_and_reads(
     first = make_visit_detector_upsert()
     second = make_visit_detector_upsert(
         detectorId=SECOND_DETECTOR_ID,
-        detector=SECOND_DETECTOR_ID,
         ccdVisitId=CCD_VISIT_ID + 1,
         ra=60.2,
     )
@@ -83,15 +82,54 @@ async def test_detector_upsert_many_and_reads(
     assert_records_match(created[0], second)
     assert_records_match(created[1], first)
 
-    updated = await store.upsert(first.model_copy(update={"seeing": 1.9}))
+    updated = await store.upsert(
+        first.model_copy(
+            update={"detector": SECOND_DETECTOR_ID + 1, "seeing": 1.9}
+        )
+    )
     assert updated.seeing == pytest.approx(1.9)
-    fetched = await store.get_by_detector_id(first.detectorId)
+    assert updated.detector == SECOND_DETECTOR_ID + 1
+    fetched = await store.get_by_visit_and_detector_id(
+        first.visitId, first.detectorId
+    )
     assert_records_match(fetched, updated)
     by_visit = await store.get_by_visit_id(first.visitId)
     assert [record.detectorId for record in by_visit] == [
         first.detectorId,
         second.detectorId,
     ]
+
+
+@pytest.mark.asyncio
+async def test_detector_batch_keeps_shared_detector_in_both_visits(
+    db_session: AsyncSession,
+) -> None:
+    visits = VisitStore(db_session)
+    second_visit_id = VISIT_ID + 1
+    await visits.upsert(make_visit_upsert())
+    await visits.upsert(
+        make_visit_upsert(visitId=second_visit_id, visit=second_visit_id)
+    )
+    first = make_visit_detector_upsert(seeing=1.8)
+    second = make_visit_detector_upsert(
+        visitId=second_visit_id, ccdVisitId=CCD_VISIT_ID + 1, seeing=2.0
+    )
+    store = VisitDetectorStore(db_session)
+
+    created = await store.upsert_many([second, first])
+    assert_records_match(created[0], second)
+    assert_records_match(created[1], first)
+
+    updated = first.model_copy(update={"seeing": 1.9})
+    await store.upsert_many([updated])
+    first_row = await store.get_by_visit_and_detector_id(
+        first.visitId, first.detectorId
+    )
+    second_row = await store.get_by_visit_and_detector_id(
+        second.visitId, second.detectorId
+    )
+    assert_records_match(first_row, updated)
+    assert_records_match(second_row, second)
 
 
 @pytest.mark.asyncio
@@ -109,14 +147,9 @@ async def test_detector_batch_rejects_duplicate_identities(
 
     with pytest.raises(DuplicateVisitDetectorBatchError):
         await store.upsert_many(
-            [first, first.model_copy(update={"detector": 2})]
-        )
-
-    with pytest.raises(DuplicateVisitDetectorBatchError):
-        await store.upsert_many(
             [
                 first,
-                first.model_copy(update={"detectorId": first.detectorId + 1}),
+                first.model_copy(update={"detector": SECOND_DETECTOR_ID}),
             ]
         )
     assert await store.get_by_visit_id(first.visitId) == []
@@ -139,7 +172,9 @@ async def test_detector_batch_rolls_back_on_database_error(
         await store.upsert_many([valid, invalid])
 
     with pytest.raises(UnknownVisitDetectorRecordError):
-        await store.get_by_detector_id(valid.detectorId)
+        await store.get_by_visit_and_detector_id(
+            valid.visitId, valid.detectorId
+        )
 
 
 @pytest.mark.asyncio
@@ -151,7 +186,7 @@ async def test_detector_foreign_key_is_enforced(
         await store.upsert(make_visit_detector_upsert())
 
     with pytest.raises(UnknownVisitDetectorRecordError):
-        await store.get_by_detector_id(DETECTOR_ID)
+        await store.get_by_visit_and_detector_id(VISIT_ID, DETECTOR_ID)
 
 
 @pytest.mark.asyncio
@@ -160,7 +195,7 @@ async def test_unknown_detector_and_empty_visit_reads(
 ) -> None:
     store = VisitDetectorStore(db_session)
     with pytest.raises(UnknownVisitDetectorRecordError):
-        await store.get_by_detector_id(123)
+        await store.get_by_visit_and_detector_id(123, DETECTOR_ID)
     assert await store.get_by_visit_id(123) == []
 
 

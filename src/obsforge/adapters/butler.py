@@ -219,13 +219,10 @@ class ButlerAdapter:
                 _VISIT_DETECTOR_DATASET_TYPE, str(e)
             ) from e
 
-        detector_ids = [record.detectorId for record in records]
-        detector_keys = [
-            (record.visitId, record.detector) for record in records
-        ]
-        if len(set(detector_ids)) != len(detector_ids) or len(
-            set(detector_keys)
-        ) != len(detector_keys):
+        detector_keys = {
+            (record.visitId, record.detectorId) for record in records
+        }
+        if len(detector_keys) != len(records):
             raise DuplicateVisitDetectorRowsError(visit)
         return records
 

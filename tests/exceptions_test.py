@@ -63,12 +63,17 @@ def test_unknown_visit_record_error() -> None:
 
 
 def test_unknown_visit_detector_record_error() -> None:
-    error = UnknownVisitDetectorRecordError(DETECTOR_ID)
+    error = UnknownVisitDetectorRecordError(VISIT_ID, DETECTOR_ID)
 
     assert isinstance(error, ClientRequestError)
     assert error.status_code == status.HTTP_404_NOT_FOUND
+    assert error.visit_id == VISIT_ID
+    assert error.detector_id == DETECTOR_ID
     assert error.to_dict() == {
-        "msg": f"Unknown VisitDetector record {DETECTOR_ID}",
+        "msg": (
+            f"Unknown VisitDetector record for visit {VISIT_ID}, "
+            f"detector ID {DETECTOR_ID}"
+        ),
         "type": "unknown_visit_detector_record",
     }
 

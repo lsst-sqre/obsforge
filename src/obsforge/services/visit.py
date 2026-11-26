@@ -47,8 +47,8 @@ class VisitDetectorStoreProtocol(Protocol):
         self, records: Sequence[VisitDetectorUpsert]
     ) -> list[SerializedVisitDetector]: ...
 
-    async def get_by_detector_id(
-        self, detector_id: int
+    async def get_by_visit_and_detector_id(
+        self, visit_id: int, detector_id: int
     ) -> SerializedVisitDetector: ...
 
     async def get_by_visit_id(
@@ -74,11 +74,13 @@ class VisitDetectorService:
         """Insert or update multiple VisitDetector records."""
         return await self._store.upsert_many(records)
 
-    async def get_by_detector_id(
-        self, detector_id: int
+    async def get_by_visit_and_detector_id(
+        self, visit_id: int, detector_id: int
     ) -> SerializedVisitDetector:
-        """Retrieve one VisitDetector record by detector ID."""
-        return await self._store.get_by_detector_id(detector_id)
+        """Retrieve one VisitDetector record by visit ID and detector ID."""
+        return await self._store.get_by_visit_and_detector_id(
+            visit_id, detector_id
+        )
 
     async def get_by_visit_id(
         self, visit_id: int

@@ -33,8 +33,8 @@ class DuplicateVisitDetectorBatchError(ValueError):
 
     def __init__(self) -> None:
         super().__init__(
-            "VisitDetector batch contains duplicate detectorId or "
-            "(visitId, detector) values"
+            "VisitDetector batch contains duplicate "
+            "(visitId, detectorId) values"
         )
 
 
@@ -84,7 +84,7 @@ class VisitDetectorStore:
     async def upsert(
         self, record: VisitDetectorUpsert
     ) -> SerializedVisitDetector:
-        """Insert or update one VisitDetector record by detector ID."""
+        """Insert or update a record by visit ID and detector ID."""
         stmt = self._upsert_statement([record.model_dump()])
         async with self._session.begin():
             detector: SQLVisitDetector = (
@@ -110,21 +110,28 @@ class VisitDetectorStore:
                 (await self._session.execute(stmt)).scalars().all()
             )
 
-        rows_by_id = {row.detectorId: self._serialize(row) for row in rows}
-        return [rows_by_id[record.detectorId] for record in records]
+            rows_by_key = {
+                (row.visitId, row.detectorId): self._serialize(row)
+                for row in rows
+            }
+        return [
+            rows_by_key[record.visitId, record.detectorId]
+            for record in records
+        ]
 
-    async def get_by_detector_id(
-        self, detector_id: int
+    async def get_by_visit_and_detector_id(
+        self, visit_id: int, detector_id: int
     ) -> SerializedVisitDetector:
-        """Retrieve a VisitDetector record by detector ID."""
+        """Retrieve a VisitDetector record by visit ID and detector ID."""
         stmt = select(SQLVisitDetector).where(
-            SQLVisitDetector.detectorId == detector_id
+            SQLVisitDetector.visitId == visit_id,
+            SQLVisitDetector.detectorId == detector_id,
         )
         async with self._session.begin():
-            detector = (await self._session.execute(stmt)).scalar_one_or_none()
-            if detector is None:
-                raise UnknownVisitDetectorRecordError(detector_id)
-            return self._serialize(detector)
+            row = (await self._session.execute(stmt)).scalar_one_or_none()
+            if row is None:
+                raise UnknownVisitDetectorRecordError(visit_id, detector_id)
+            return self._serialize(row)
 
     async def get_by_visit_id(
         self, visit_id: int
@@ -151,19 +158,17 @@ class VisitDetectorStore:
         update_values = {
             key: getattr(insert_stmt.excluded, key)
             for key in values[0]
-            if key != "detectorId"
+            if key not in {"visitId", "detectorId"}
         }
         return insert_stmt.on_conflict_do_update(
-            index_elements=[SQLVisitDetector.detectorId],
+            index_elements=[
+                SQLVisitDetector.visitId,
+                SQLVisitDetector.detectorId,
+            ],
             set_=update_values,
         ).returning(SQLVisitDetector)
 
     def _validate_batch(self, records: Sequence[VisitDetectorUpsert]) -> None:
-        detector_ids = [record.detectorId for record in records]
-        visit_detectors = [
-            (record.visitId, record.detector) for record in records
-        ]
-        if len(set(detector_ids)) != len(detector_ids) or len(
-            set(visit_detectors)
-        ) != len(visit_detectors):
+        keys = {(record.visitId, record.detectorId) for record in records}
+        if len(keys) != len(records):
             raise DuplicateVisitDetectorBatchError

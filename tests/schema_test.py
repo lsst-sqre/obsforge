@@ -63,12 +63,26 @@ async def test_schema_migrations() -> None:
             check=True,
             cwd=alembic_config_path.parent,
         )
+
         async with engine.connect() as connection:
             ivoa_tables = await connection.run_sync(
                 lambda conn: inspect(conn).get_table_names(schema="ivoa")
             )
         assert "obscore" in ivoa_tables
         assert "ObsCore" not in ivoa_tables
+
+        async with engine.connect() as connection:
+            primary_key = await connection.run_sync(
+                lambda conn: inspect(conn).get_pk_constraint("VisitDetector")
+            )
+            foreign_keys = await connection.run_sync(
+                lambda conn: inspect(conn).get_foreign_keys("VisitDetector")
+            )
+        assert primary_key["constrained_columns"] == ["visitId", "detectorId"]
+        assert len(foreign_keys) == 1
+        assert foreign_keys[0]["constrained_columns"] == ["visitId"]
+        assert foreign_keys[0]["referred_table"] == "Visit"
+        assert foreign_keys[0]["referred_columns"] == ["visitId"]
     finally:
         await engine.dispose()
 
@@ -377,7 +391,6 @@ def test_visit_detector_columns_and_types() -> None:
         "wcsPreliminaryDetectorPointingResidual",
         "wcsPreliminaryVisitPointingResidual",
     }
-    assert columns["detectorId"].primary_key is True
     assert isinstance(columns["detectorId"].type, BigInteger)
     assert isinstance(columns["visitId"].type, BigInteger)
     assert isinstance(columns["nPsfStar"].type, Integer)
@@ -406,17 +419,14 @@ def test_visit_constraints_and_indexes() -> None:
     } == {"visit"}
 
     detector_table = cast("Table", VisitDetector.__table__)
-    detector_uniques = {
-        constraint.name: constraint
+    assert [column.name for column in detector_table.primary_key.columns] == [
+        "visitId",
+        "detectorId",
+    ]
+    assert not any(
+        isinstance(constraint, UniqueConstraint)
         for constraint in detector_table.constraints
-        if isinstance(constraint, UniqueConstraint)
-    }
-    assert {
-        column.name
-        for column in detector_uniques[
-            "visit_detector_visit_detector_key"
-        ].columns
-    } == {"visitId", "detector"}
+    )
     foreign_keys = [
         constraint
         for constraint in detector_table.constraints
@@ -426,11 +436,7 @@ def test_visit_constraints_and_indexes() -> None:
     assert [
         element.target_fullname for element in foreign_keys[0].elements
     ] == ["Visit.visitId"]
-    assert {index.name for index in detector_table.indexes} == {
-        "visit_detector_by_visit_id"
-    }
-    visit_index = next(iter(detector_table.indexes))
-    assert [column.name for column in visit_index.columns] == ["visitId"]
+    assert not detector_table.indexes
 
 
 def test_scheduler_observatory_state_schema() -> None:

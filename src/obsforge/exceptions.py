@@ -54,8 +54,12 @@ class UnknownVisitDetectorRecordError(ClientRequestError):
     error = "unknown_visit_detector_record"
     status_code = status.HTTP_404_NOT_FOUND
 
-    def __init__(self, detector_id: int) -> None:
-        super().__init__(f"Unknown VisitDetector record {detector_id}")
+    def __init__(self, visit_id: int, detector_id: int) -> None:
+        super().__init__(
+            f"Unknown VisitDetector record for visit {visit_id}, "
+            f"detector ID {detector_id}"
+        )
+        self.visit_id = visit_id
         self.detector_id = detector_id
 
 

@@ -215,11 +215,15 @@ async def test_run_enrichment_marks_completed(
 
 
 @pytest.mark.asyncio
-async def test_enrich_visit_is_idempotent(
+async def test_enrich_visit_preserves_shared_detector_history(
     app: FastAPI, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Test repeated enrichment updates the same database identities."""
-    enrichment_number = 0
+    """Test re-enrichment updates just one visit's detector records."""
+    second_visit_id = VISIT_ID + 1
+    observations = {
+        VISIT_ID: ("r", "r_57", 1.8),
+        second_visit_id: ("r", "r_57", 2.0),
+    }
 
     class FakeDaxObsCoreAdapter:
         def __init__(self, **kwargs: Any) -> None:
@@ -228,12 +232,9 @@ async def test_enrich_visit_is_idempotent(
         def iter_visit_records(
             self, registration: VisitRegistration
         ) -> Iterator[ObsCoreUpsert]:
-            nonlocal enrichment_number
-            enrichment_number += 1
-            band = "r" if enrichment_number == 1 else "i"
-            physical_filter = "r_57" if enrichment_number == 1 else "i_39"
+            band, physical_filter, _ = observations[registration.visit]
             yield make_obscore_upsert(
-                obs_id="idempotent-obscore",
+                obs_id=f"obscore-{registration.visit}",
                 lsst_visit=registration.visit,
                 lsst_band=band,
                 lsst_filter=physical_filter,
@@ -246,28 +247,31 @@ async def test_enrich_visit_is_idempotent(
         def fetch_visit_records(
             self, registration: VisitRegistration
         ) -> ButlerVisitRecords:
-            band = "r" if enrichment_number == 1 else "i"
-            physical_filter = "r_57" if enrichment_number == 1 else "i_39"
+            visit_id = registration.visit
+            band, physical_filter, seeing = observations[visit_id]
             return ButlerVisitRecords(
                 visit=make_visit_upsert(
+                    visitId=visit_id,
+                    visit=visit_id,
                     physical_filter=physical_filter,
                     band=band,
                 ),
                 detectors=[
                     make_visit_detector_upsert(
+                        visitId=visit_id,
+                        ccdVisitId=CCD_VISIT_ID + (visit_id - VISIT_ID),
                         physical_filter=physical_filter,
                         band=band,
-                        seeing=(
-                            1.8173703439476878
-                            if enrichment_number == 1
-                            else 1.9
-                        ),
+                        seeing=seeing,
                     )
                 ],
             )
 
-    registration = make_enrichment_registration(VISIT_ID)
-    job = await EnrichmentJobStore(db_session).add_or_get(registration)
+    jobs = EnrichmentJobStore(db_session)
+    first_job = await jobs.add_or_get(make_enrichment_registration(VISIT_ID))
+    second_job = await jobs.add_or_get(
+        make_enrichment_registration(second_visit_id)
+    )
     monkeypatch.setattr(enrichment, "DaxObsCoreAdapter", FakeDaxObsCoreAdapter)
     monkeypatch.setattr(enrichment, "ButlerAdapter", FakeButlerAdapter)
     context = {
@@ -277,21 +281,30 @@ async def test_enrich_visit_is_idempotent(
         "butler_access_token": SecretStr("worker-token"),
     }
 
-    await enrichment.enrich_visit(job.id, session=db_session, context=context)
-    await enrichment.enrich_visit(job.id, session=db_session, context=context)
+    await enrichment.enrich_visit(
+        first_job.id, session=db_session, context=context
+    )
+    await enrichment.enrich_visit(
+        second_job.id, session=db_session, context=context
+    )
+    observations[VISIT_ID] = ("i", "i_39", 1.9)
+    await enrichment.enrich_visit(
+        first_job.id, session=db_session, context=context
+    )
 
     obscore = await ObsCoreStore(db_session).get_by_obs_id(
-        "idempotent-obscore"
+        f"obscore-{VISIT_ID}"
     )
     assert obscore.lsst_band == "i"
-    visit = await VisitStore(db_session).get_by_visit_id(registration.visit)
+    visit = await VisitStore(db_session).get_by_visit_id(VISIT_ID)
     assert visit.band == "i"
-    detectors = await VisitDetectorStore(db_session).get_by_visit_id(
-        registration.visit
-    )
-    assert len(detectors) == 1
-    assert detectors[0].detectorId == DETECTOR_ID
-    assert detectors[0].seeing == pytest.approx(1.9)
+    detector_store = VisitDetectorStore(db_session)
+    first = await detector_store.get_by_visit_id(VISIT_ID)
+    second = await detector_store.get_by_visit_id(second_visit_id)
+    assert len(first) == len(second) == 1
+    assert first[0].detectorId == second[0].detectorId == DETECTOR_ID
+    assert first[0].seeing == pytest.approx(1.9)
+    assert second[0].seeing == pytest.approx(2.0)
 
 
 @pytest.mark.asyncio

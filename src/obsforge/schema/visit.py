@@ -6,8 +6,8 @@ from sqlalchemy import (
     BigInteger,
     DateTime,
     ForeignKey,
-    Index,
     Integer,
+    PrimaryKeyConstraint,
     String,
     UniqueConstraint,
 )
@@ -73,13 +73,15 @@ class VisitDetector(SchemaBase):
     """Per-detector metadata and metrics for one visit."""
 
     __tablename__ = "VisitDetector"
+    __table_args__ = (PrimaryKeyConstraint("visitId", "detectorId"),)
 
     detectorId: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True, autoincrement=False
+        BigInteger, autoincrement=False, nullable=False
     )
     visitId: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("Visit.visitId"),
+        autoincrement=False,
         nullable=False,
     )
     physical_filter: Mapped[str | None] = mapped_column(
@@ -239,13 +241,4 @@ class VisitDetector(SchemaBase):
     )
     wcsPreliminaryVisitPointingResidual: Mapped[float | None] = mapped_column(
         DOUBLE_PRECISION, nullable=True
-    )
-
-    __table_args__ = (
-        UniqueConstraint(
-            "visitId",
-            "detector",
-            name="visit_detector_visit_detector_key",
-        ),
-        Index("visit_detector_by_visit_id", "visitId"),
     )

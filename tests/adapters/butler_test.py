@@ -144,15 +144,12 @@ def test_fetch_visit_records() -> None:
                 make_visit_detector_table(
                     rows=[
                         {
-                            "detectorId": DETECTOR_ID - 1,
                             "visitId": 123,
-                            "detector": DETECTOR_ID - 1,
                             "ccdVisitId": CCD_VISIT_ID - 1,
                         },
                         {},
                         {
                             "detectorId": SECOND_DETECTOR_ID,
-                            "detector": SECOND_DETECTOR_ID,
                             "ccdVisitId": CCD_VISIT_ID + 1,
                         },
                     ]
@@ -173,6 +170,10 @@ def test_fetch_visit_records() -> None:
     assert [record.detectorId for record in records.detectors] == [
         DETECTOR_ID,
         SECOND_DETECTOR_ID,
+    ]
+    assert [record.detector for record in records.detectors] == [
+        DETECTOR_ID,
+        DETECTOR_ID,
     ]
     assert isinstance(records.visit.visitId, int)
     assert isinstance(records.detectors[0].pixelScale, float)
@@ -315,18 +316,10 @@ def test_rejects_duplicate_visit_rows() -> None:
         adapter.fetch_visit_records(make_registration())
 
 
-@pytest.mark.parametrize("identity", ["detectorId", "visit_detector"])
-def test_rejects_duplicate_detector_identities(identity: str) -> None:
-    second = {
-        "detectorId": SECOND_DETECTOR_ID,
-        "detector": SECOND_DETECTOR_ID,
-        "ccdVisitId": CCD_VISIT_ID + 1,
-    }
-    if identity == "detectorId":
-        second["detectorId"] = DETECTOR_ID
-    else:
-        second["detector"] = DETECTOR_ID
-    table = make_visit_detector_table(rows=[{}, second])
+def test_rejects_duplicate_visit_detector_id_keys() -> None:
+    table = make_visit_detector_table(
+        rows=[{}, {"detector": SECOND_DETECTOR_ID}]
+    )
     adapter, _, _ = make_adapter(
         {
             VISIT_DATASET_ID: ("visit_table", make_visit_table()),

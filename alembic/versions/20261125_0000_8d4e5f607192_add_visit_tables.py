@@ -47,12 +47,11 @@ def upgrade() -> None:
     op.create_table(
         "VisitDetector",
         sa.Column(
-            "detectorId",
-            sa.BigInteger(),
-            autoincrement=False,
-            nullable=False,
+            "detectorId", sa.BigInteger(), autoincrement=False, nullable=False
         ),
-        sa.Column("visitId", sa.BigInteger(), nullable=False),
+        sa.Column(
+            "visitId", sa.BigInteger(), autoincrement=False, nullable=False
+        ),
         sa.Column("physical_filter", sa.String(length=32), nullable=True),
         sa.Column("band", sa.String(length=32), nullable=True),
         sa.Column("ra", sa.DOUBLE_PRECISION(), nullable=True),
@@ -144,22 +143,10 @@ def upgrade() -> None:
             nullable=True,
         ),
         sa.ForeignKeyConstraint(["visitId"], ["Visit.visitId"]),
-        sa.PrimaryKeyConstraint("detectorId"),
-        sa.UniqueConstraint(
-            "visitId",
-            "detector",
-            name="visit_detector_visit_detector_key",
-        ),
-    )
-    op.create_index(
-        "visit_detector_by_visit_id",
-        "VisitDetector",
-        ["visitId"],
-        unique=False,
+        sa.PrimaryKeyConstraint("visitId", "detectorId"),
     )
 
 
 def downgrade() -> None:
-    op.drop_index("visit_detector_by_visit_id", table_name="VisitDetector")
     op.drop_table("VisitDetector")
     op.drop_table("Visit")
