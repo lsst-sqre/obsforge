@@ -17,6 +17,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     create_mock_engine,
+    inspect,
     text,
 )
 
@@ -33,6 +34,7 @@ from obsforge.schema import (
 @pytest.mark.asyncio
 async def test_schema_migrations() -> None:
     """Test that Alembic migrations create the current ORM schema."""
+    alembic_config_path = Path(__file__).parents[1] / "alembic.ini"
     engine = create_database_engine(
         config.database_url, config.database_password
     )
@@ -45,20 +47,24 @@ async def test_schema_migrations() -> None:
             await connection.execute(
                 text("DROP SCHEMA IF EXISTS scheduler CASCADE")
             )
+        subprocess.run(
+            ["alembic", "-c", str(alembic_config_path), "upgrade", "head"],
+            check=True,
+            cwd=alembic_config_path.parent,
+        )
+        subprocess.run(
+            ["alembic", "-c", str(alembic_config_path), "check"],
+            check=True,
+            cwd=alembic_config_path.parent,
+        )
+        async with engine.connect() as connection:
+            ivoa_tables = await connection.run_sync(
+                lambda conn: inspect(conn).get_table_names(schema="ivoa")
+            )
+        assert "obscore" in ivoa_tables
+        assert "ObsCore" not in ivoa_tables
     finally:
         await engine.dispose()
-
-    alembic_config_path = Path(__file__).parents[1] / "alembic.ini"
-    subprocess.run(
-        ["alembic", "-c", str(alembic_config_path), "upgrade", "head"],
-        check=True,
-        cwd=alembic_config_path.parent,
-    )
-    subprocess.run(
-        ["alembic", "-c", str(alembic_config_path), "check"],
-        check=True,
-        cwd=alembic_config_path.parent,
-    )
 
 
 def test_enrichment_job_table_registered() -> None:
@@ -120,7 +126,7 @@ def test_enrichment_job_phase_values() -> None:
 
 
 def test_obscore_table_registered() -> None:
-    assert SchemaBase.metadata.tables["ivoa.ObsCore"] is ObsCore.__table__
+    assert SchemaBase.metadata.tables["ivoa.obscore"] is ObsCore.__table__
 
 
 def test_obscore_schema_create_ddl_registered() -> None:

@@ -22,7 +22,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     op.execute("CREATE SCHEMA IF NOT EXISTS ivoa")
     op.create_table(
-        "ObsCore",
+        "obscore",
         sa.Column("dataproduct_type", sa.Text(), nullable=False),
         sa.Column("dataproduct_subtype", sa.Text(), nullable=False),
         sa.Column("calib_level", sa.Integer(), nullable=False),
@@ -67,4 +67,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("ObsCore", schema="ivoa")
+    op.drop_table("obscore", schema="ivoa")
