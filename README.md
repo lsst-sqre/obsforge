@@ -111,8 +111,9 @@ curl -sS "$BASE/jobs/$JOB_ID" | jq .
 
 The `datasets` entries are persisted in the job's `registration_payload`.
 During enrichment, the worker selects entries whose `dataset_type` matches
-`OBSFORGE_OBSCORE_DATASET_TYPE`, uses their UUIDs to constrain
-`lsst.dax.obscore`, and upserts the returned ObsCore records into ObsDB. The
+`OBSFORGE_OBSCORE_DATASET_TYPE` (default `preliminary_visit_image`). At
+least one matching entry is required. The worker uses their UUIDs to constrain
+`lsst.dax.obscore` and upserts the returned ObsCore records into ObsDB. The
 same registration must contain exactly one `visit_table` UUID and one
 `visit_detector_table` UUID. The worker loads those Astropy tables by UUID,
 selects rows matching the registered `visit`, and upserts the Visit and
@@ -122,7 +123,13 @@ The worker verifies the instrument on both Butler dataset references and
 stores it in both tables. Join Visit to VisitDetector on both `instrument`
 and `visitId`.
 
-Registering the same `instrument` and `visit` pair again is idempotent:
+To retry a job in `ERROR`, update `PAYLOAD` with the full registration
+for the same `instrument` and `visit`. For `MissingObsCoreDatasetError`,
+include at least one dataset of the configured ObsCore type. For
+`ButlerDatasetCardinalityError`, include exactly one UUID for each of
+`visit_table` and `visit_detector_table`. Reposting replaces the failed
+job's saved payload and queues another attempt under the same job ID.
+Duplicate registrations in other phases keep the saved payload.
 
 ```sh
 curl -sS \

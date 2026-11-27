@@ -15,6 +15,8 @@ from obsforge.exceptions import (
 from obsforge.models import VisitDataset, VisitRegistration, VisitTimespan
 from obsforge.schema import EnrichmentJobPhase
 from obsforge.storage import EnrichmentJobStore
+from tests.support.obscore import SECOND_DATASET_ID
+from tests.support.registration import make_visit_registration
 
 
 def make_registration(
@@ -44,7 +46,9 @@ def make_registration(
 async def test_add_or_get_is_idempotent(db_session: AsyncSession) -> None:
     store = EnrichmentJobStore(db_session)
     registration = make_registration()
-    duplicate = make_registration(day_obs=20260328)
+    duplicate = registration.model_copy(
+        update={"day_obs": 20260328, "datasets": []}
+    )
 
     first = await store.add_or_get(registration)
     second = await store.add_or_get(duplicate)
@@ -94,7 +98,10 @@ async def test_add_or_get_preserves_active_or_completed_duplicates(
         await store.mark_executing(created.id)
         expected = await store.mark_completed(created.id)
 
-    duplicate = await store.add_or_get(registration)
+    changed_registration = registration.model_copy(
+        update={"day_obs": 20260328, "datasets": []}
+    )
+    duplicate = await store.add_or_get(changed_registration)
 
     assert duplicate == expected
 
@@ -106,6 +113,7 @@ async def test_add_or_get_requeues_error_duplicate(
     store = EnrichmentJobStore(db_session)
     registration = make_registration()
     created = await store.add_or_get(registration)
+    await store.set_arq_job_id_and_mark_queued(created.id, "failed-attempt")
     await store.mark_executing(created.id)
     failed = await store.mark_failed(
         created.id,
@@ -113,16 +121,46 @@ async def test_add_or_get_requeues_error_duplicate(
         error_message="metadata missing",
     )
 
-    requeued = await store.add_or_get(registration)
+    corrected = make_visit_registration(
+        instrument=registration.instrument,
+        visit=registration.visit,
+        day_obs=20260109,
+        datasets=[
+            {
+                "dataset_type": "preliminary_visit_image",
+                "id": SECOND_DATASET_ID,
+            }
+        ],
+        timespan={
+            "begin": datetime(2026, 1, 10, 2, 46, tzinfo=UTC),
+            "end": datetime(2026, 1, 10, 2, 47, tzinfo=UTC),
+        },
+    )
+    requeued = await store.add_or_get_internal(corrected)
 
     assert requeued.id == failed.id
+    assert requeued.instrument == failed.instrument
     assert requeued.visit == failed.visit
+    assert requeued.created_at == failed.created_at
+    assert requeued.day_obs == corrected.day_obs
+    assert requeued.registration_payload == corrected.model_dump(mode="json")
     assert requeued.phase == EnrichmentJobPhase.QUEUED
     assert requeued.error_code is None
     assert requeued.error_message is None
     assert requeued.started_at is None
     assert requeued.completed_at is None
+    assert requeued.arq_job_id is None
     assert requeued.updated_at >= failed.updated_at
+
+    session_generator = db_session_dependency()
+    other_session = await anext(session_generator)
+    try:
+        persisted = await EnrichmentJobStore(other_session).get_internal(
+            requeued.id
+        )
+        assert persisted == requeued
+    finally:
+        await session_generator.aclose()
 
 
 @pytest.mark.asyncio
