@@ -24,7 +24,7 @@ def _info(unit: str, description: str, ucd: str) -> dict[str, str]:
 class ObsCore(SchemaBase):
     """ObsCore observation metadata enriched by ObsForge."""
 
-    __tablename__ = "ObsCore"
+    __tablename__ = "obscore"
     __table_args__ = ({"schema": _IVOA_SCHEMA},)
 
     dataproduct_type: Mapped[str] = mapped_column(
