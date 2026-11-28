@@ -10,6 +10,8 @@ __all__ = [
     "UnknownEnrichmentJobError",
     "UnknownEnrichmentJobVisitError",
     "UnknownObsCoreRecordError",
+    "UnknownVisitDetectorRecordError",
+    "UnknownVisitRecordError",
 ]
 
 
@@ -33,6 +35,40 @@ class UnknownObsCoreRecordError(ClientRequestError):
     def __init__(self, obs_id: str) -> None:
         super().__init__(f"Unknown ObsCore record {obs_id}")
         self.obs_id = obs_id
+
+
+class UnknownVisitRecordError(ClientRequestError):
+    """Raised when a Visit record cannot be found."""
+
+    error = "unknown_visit_record"
+    status_code = status.HTTP_404_NOT_FOUND
+
+    def __init__(self, instrument: str, visit_id: int) -> None:
+        super().__init__(
+            f"Unknown Visit record for instrument {instrument!r} "
+            f"and visit {visit_id}"
+        )
+        self.instrument = instrument
+        self.visit_id = visit_id
+
+
+class UnknownVisitDetectorRecordError(ClientRequestError):
+    """Raised when a VisitDetector record cannot be found."""
+
+    error = "unknown_visit_detector_record"
+    status_code = status.HTTP_404_NOT_FOUND
+
+    def __init__(
+        self, instrument: str, visit_id: int, detector_id: int
+    ) -> None:
+        super().__init__(
+            f"Unknown VisitDetector record for instrument {instrument!r}, "
+            f"visit {visit_id}, "
+            f"detector ID {detector_id}"
+        )
+        self.instrument = instrument
+        self.visit_id = visit_id
+        self.detector_id = detector_id
 
 
 class UnknownEnrichmentJobVisitError(ClientRequestError):

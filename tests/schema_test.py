@@ -9,10 +9,14 @@ import pytest
 from safir.database import create_database_engine, drop_database
 from sqlalchemy import (
     DDL,
+    DOUBLE_PRECISION,
+    REAL,
     BigInteger,
     DateTime,
     Float,
+    ForeignKeyConstraint,
     Integer,
+    String,
     Table,
     Text,
     UniqueConstraint,
@@ -28,6 +32,8 @@ from obsforge.schema import (
     ObsCore,
     SchedulerObservatoryState,
     SchemaBase,
+    Visit,
+    VisitDetector,
 )
 
 
@@ -57,12 +63,43 @@ async def test_schema_migrations() -> None:
             check=True,
             cwd=alembic_config_path.parent,
         )
+
         async with engine.connect() as connection:
             ivoa_tables = await connection.run_sync(
                 lambda conn: inspect(conn).get_table_names(schema="ivoa")
             )
         assert "obscore" in ivoa_tables
         assert "ObsCore" not in ivoa_tables
+
+        async with engine.connect() as connection:
+            visit_key = await connection.run_sync(
+                lambda conn: inspect(conn).get_pk_constraint("visit")
+            )
+            detector_key = await connection.run_sync(
+                lambda conn: inspect(conn).get_pk_constraint("visitdetector")
+            )
+            visit_uniques = await connection.run_sync(
+                lambda conn: inspect(conn).get_unique_constraints("visit")
+            )
+            foreign_keys = await connection.run_sync(
+                lambda conn: inspect(conn).get_foreign_keys("visitdetector")
+            )
+        assert visit_key["constrained_columns"] == ["instrument", "visitId"]
+        assert detector_key["constrained_columns"] == [
+            "instrument",
+            "visitId",
+            "detectorId",
+        ]
+        assert [key["column_names"] for key in visit_uniques] == [
+            ["instrument", "visit"]
+        ]
+        assert len(foreign_keys) == 1
+        assert foreign_keys[0]["constrained_columns"] == [
+            "instrument",
+            "visitId",
+        ]
+        assert foreign_keys[0]["referred_table"] == "visit"
+        assert foreign_keys[0]["referred_columns"] == ["instrument", "visitId"]
     finally:
         await engine.dispose()
 
@@ -246,6 +283,186 @@ def test_obscore_column_info() -> None:
         "description": "Identifier for CCD within the LSSTCam focal plane",
         "ucd": "meta.id;instr.det",
     }
+
+
+def test_visit_tables_registered() -> None:
+    assert SchemaBase.metadata.tables["visit"] is Visit.__table__
+    assert (
+        SchemaBase.metadata.tables["visitdetector"] is VisitDetector.__table__
+    )
+
+
+def test_visit_columns_and_types() -> None:
+    columns = Visit.__table__.columns
+    assert set(columns.keys()) == {
+        "instrument",
+        "visitId",
+        "visit",
+        "physical_filter",
+        "band",
+        "ra",
+        "dec",
+        "decl",
+        "skyRotation",
+        "azimuth",
+        "altitude",
+        "zenithDistance",
+        "airmass",
+        "expTime",
+        "expMidpt",
+        "expMidptMJD",
+        "obsStart",
+        "obsStartMJD",
+    }
+    assert isinstance(columns["instrument"].type, Text)
+    assert isinstance(columns["visitId"].type, BigInteger)
+    assert isinstance(columns["visit"].type, BigInteger)
+    assert isinstance(columns["ra"].type, DOUBLE_PRECISION)
+    assert isinstance(columns["expMidpt"].type, DateTime)
+    assert columns["expMidpt"].type.timezone is False
+    assert isinstance(columns["physical_filter"].type, String)
+    assert columns["physical_filter"].type.length == 4
+    assert isinstance(columns["band"].type, String)
+    assert columns["band"].type.length == 1
+    required = {"instrument", "visitId", "visit"}
+    for name, column in columns.items():
+        assert column.nullable is (name not in required)
+
+
+def test_visit_detector_columns_and_types() -> None:
+    columns = VisitDetector.__table__.columns
+    assert set(columns.keys()) == {
+        "instrument",
+        "detectorId",
+        "visitId",
+        "physical_filter",
+        "band",
+        "ra",
+        "dec",
+        "pixelScale",
+        "zenithDistance",
+        "expTime",
+        "zeroPoint",
+        "psfSigma",
+        "psfArea",
+        "psfIxx",
+        "psfIyy",
+        "psfIxy",
+        "skyBg",
+        "skyNoise",
+        "psfAdaptiveThresholdValue",
+        "psfAdaptiveIncludeThresholdMultiplier",
+        "nShapeletsStar",
+        "shapeletsOnlyIqScore",
+        "shapeletsIqScore",
+        "centroidDiffShapeletsVsSlotMedian",
+        "shapeletsStarEMedian",
+        "shapeletsStarUnNormalizedEMedian",
+        "refCatSourceDensity",
+        "astromOffsetMean",
+        "astromOffsetStd",
+        "nPsfStar",
+        "psfStarDeltaE1Median",
+        "psfStarDeltaE2Median",
+        "psfStarDeltaE1Scatter",
+        "psfStarDeltaE2Scatter",
+        "psfStarDeltaSizeMedian",
+        "psfStarDeltaSizeScatter",
+        "psfStarScaledDeltaSizeScatter",
+        "psfTraceRadiusDelta",
+        "psfApFluxDelta",
+        "psfApCorrSigmaScaledDelta",
+        "maxDistToNearestPsf",
+        "starEMedian",
+        "starUnNormalizedEMedian",
+        "starComa1Median",
+        "starComa2Median",
+        "starTrefoil1Median",
+        "starTrefoil2Median",
+        "starKurtosisMedian",
+        "starE41Median",
+        "starE42Median",
+        "effTime",
+        "effTimePsfSigmaScale",
+        "effTimeSkyBgScale",
+        "effTimeZeroPointScale",
+        "magLim",
+        "decl",
+        "ccdVisitId",
+        "detector",
+        "seeing",
+        "skyRotation",
+        "expMidpt",
+        "expMidptMJD",
+        "obsStart",
+        "obsStartMJD",
+        "darkTime",
+        "xSize",
+        "ySize",
+        "llcra",
+        "llcdec",
+        "ulcra",
+        "ulcdec",
+        "urcra",
+        "urcdec",
+        "lrcra",
+        "lrcdec",
+        "wcsPreliminaryDetectorPointingResidual",
+        "wcsPreliminaryVisitPointingResidual",
+    }
+    assert isinstance(columns["instrument"].type, Text)
+    assert isinstance(columns["detectorId"].type, BigInteger)
+    assert isinstance(columns["visitId"].type, BigInteger)
+    assert isinstance(columns["nPsfStar"].type, Integer)
+    assert isinstance(columns["pixelScale"].type, REAL)
+    assert isinstance(columns["decl"].type, DOUBLE_PRECISION)
+    assert isinstance(columns["physical_filter"].type, String)
+    assert columns["physical_filter"].type.length == 32
+    assert isinstance(columns["band"].type, String)
+    assert columns["band"].type.length == 32
+    assert isinstance(columns["expMidpt"].type, DateTime)
+    assert columns["expMidpt"].type.timezone is False
+    required = {"instrument", "detectorId", "visitId", "detector"}
+    for name, column in columns.items():
+        assert column.nullable is (name not in required)
+
+
+def test_visit_constraints_and_indexes() -> None:
+    visit_table = cast("Table", Visit.__table__)
+    assert [column.name for column in visit_table.primary_key.columns] == [
+        "instrument",
+        "visitId",
+    ]
+    visit_uniques = {
+        constraint.name: constraint
+        for constraint in visit_table.constraints
+        if isinstance(constraint, UniqueConstraint)
+    }
+    assert [
+        column.name
+        for column in visit_uniques["visit_instrument_visit_key"].columns
+    ] == ["instrument", "visit"]
+
+    detector_table = cast("Table", VisitDetector.__table__)
+    assert [column.name for column in detector_table.primary_key.columns] == [
+        "instrument",
+        "visitId",
+        "detectorId",
+    ]
+    assert not any(
+        isinstance(constraint, UniqueConstraint)
+        for constraint in detector_table.constraints
+    )
+    foreign_keys = [
+        constraint
+        for constraint in detector_table.constraints
+        if isinstance(constraint, ForeignKeyConstraint)
+    ]
+    assert len(foreign_keys) == 1
+    assert [
+        element.target_fullname for element in foreign_keys[0].elements
+    ] == ["visit.instrument", "visit.visitId"]
+    assert not detector_table.indexes
 
 
 def test_scheduler_observatory_state_schema() -> None:

@@ -39,14 +39,14 @@ class EnrichmentJobStore:
     async def add_or_get(
         self, registration: VisitRegistration
     ) -> SerializedEnrichmentJob:
-        """Create a pending job or return the existing duplicate."""
+        """Register a visit or return its existing job, requeueing failures."""
         return self._to_public(await self.add_or_get_internal(registration))
 
     @retry_async_transaction
     async def add_or_get_internal(
         self, registration: VisitRegistration
     ) -> StoredEnrichmentJob:
-        """Create a pending job or return the existing duplicate."""
+        """Register a visit and use the latest payload when requeueing it."""
         db_now = self._now_for_db()
         payload = registration.model_dump(mode="json")
         stmt = (
@@ -74,6 +74,8 @@ class EnrichmentJobStore:
                     registration.instrument, registration.visit
                 )
                 if job.phase == EnrichmentJobPhase.ERROR:
+                    job.registration_payload = payload
+                    job.day_obs = registration.day_obs
                     job.phase = EnrichmentJobPhase.QUEUED
                     job.error_code = None
                     job.error_message = None

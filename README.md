@@ -28,8 +28,8 @@ export OBSFORGE_ALEMBIC_CONFIG_PATH=./alembic.ini
 ```
 
 The FastAPI app can register jobs with only Postgres and Redis configured. To
-run the worker and populate ObsCore rows, also configure the Prompt Butler
-repository and the ObsCore exporter config:
+run the worker and populate ObsCore, Visit, and VisitDetector rows, also
+configure the Prompt Butler repository and the ObsCore exporter config:
 
 ```sh
 export OBSFORGE_BUTLER_LABEL=prompt
@@ -79,6 +79,14 @@ PAYLOAD='{
     {
       "dataset_type": "preliminary_visit_image",
       "id": "019ba0a6-0173-765f-bf27-56884ff9342a"
+    },
+    {
+      "dataset_type": "visit_table",
+      "id": "01a1b340-154e-7fce-b26c-b671f660788f"
+    },
+    {
+      "dataset_type": "visit_detector_table",
+      "id": "01a1b340-154e-7fce-b26c-b671f6607890"
     }
   ],
   "timespan": {
@@ -103,10 +111,25 @@ curl -sS "$BASE/jobs/$JOB_ID" | jq .
 
 The `datasets` entries are persisted in the job's `registration_payload`.
 During enrichment, the worker selects entries whose `dataset_type` matches
-`OBSFORGE_OBSCORE_DATASET_TYPE`, uses their UUIDs to constrain
-`lsst.dax.obscore`, and upserts the returned ObsCore records into ObsDB.
+`OBSFORGE_OBSCORE_DATASET_TYPE` (default `preliminary_visit_image`). At
+least one matching entry is required. The worker uses their UUIDs to constrain
+`lsst.dax.obscore` and upserts the returned ObsCore records into ObsDB. The
+same registration must contain exactly one `visit_table` UUID and one
+`visit_detector_table` UUID. The worker loads those Astropy tables by UUID,
+selects rows matching the registered `visit`, and upserts the Visit and
+VisitDetector records.
 
-Registering the same `instrument` and `visit` pair again is idempotent:
+The worker verifies the instrument on both Butler dataset references and
+stores it in both tables. Join Visit to VisitDetector on both `instrument`
+and `visitId`.
+
+To retry a job in `ERROR`, update `PAYLOAD` with the full registration
+for the same `instrument` and `visit`. For `MissingObsCoreDatasetError`,
+include at least one dataset of the configured ObsCore type. For
+`ButlerDatasetCardinalityError`, include exactly one UUID for each of
+`visit_table` and `visit_detector_table`. Reposting replaces the failed
+job's saved payload and queues another attempt under the same job ID.
+Duplicate registrations in other phases keep the saved payload.
 
 ```sh
 curl -sS \

@@ -26,6 +26,7 @@ dependencies = [
     "httpx2",
     "lsst-daf-butler[remote]>=29",
     "lsst-dax-obscore>=30.2026.2900",
+    "numpy>=2",
     "pydantic>2",
     "pydantic-settings>=2",
     "pyyaml>=6",
@@ -145,6 +146,11 @@ extend = "ruff-shared.toml"
 
 [tool.ruff.lint.isort]
 known-first-party = ["obsforge", "tests"]
+
+[tool.ruff.lint.extend-per-file-ignores]
+"src/obsforge/models.py" = ["N815"]
+"src/obsforge/schema/visit.py" = ["N815"]
+"tests/support/visit.py" = ["DTZ001"]
 
 [tool.scriv]
 categories = [
